@@ -1,0 +1,86 @@
+<!-- 
+Each Config node represents a different set of parameters to be passed to the script.
+
+The Param nodes represent each parameter with its value:
+    GroupNamePrefix = Prefix of the Entra Id group ($Model, $Vendor, and $Ring can be used)
+    PolicyNamePrefix = Prefix of the Intune driver update policy ($Model, $Vendor, and $Ring can be used)
+    RenameModel = Script used to rename the model
+    MinDeviceNumber = Minimum number of device in a single model for that model to be processed by the script
+    ScopeTag = Scope tags to assign to the driver update profiles
+    ExcludedManufacturers = Manufacturers to exclude
+    GroupOwnersFromUsers = Add user owners to the groups
+    GroupOwnersFromGroups = Add the members of the specified groups to the owners of the groups
+    LogMaxSize = Maximum size of the log file before being rotated (date added as a suffix to the log name)
+
+The following variables are used to generate a json report:
+    ReturnReport = Return statistics report with how many changed objects
+    DetailedReport = Include detailed device status in report
+    ReportToDisk = Save report to disk
+    ReportPath = Path where to save the report
+
+The following variables are used to send the report in an email:
+    SendMail = Should the report be sent by email?
+    MailTemplate = HTML template that can be used as the mail body. PowerShell variables inside the body will be expanded by using the script's variables.
+    MailSender = email address of the sender (from)
+    MailRecipient = email addresses of the email recipients (To)
+    MailCc = email addresses of the email cc recipients (Cc)
+    MailAttachment = Additional attachments besides the json report
+    SmtpServer = SMTP server used to send the email
+    SmtpPort = Port of the SMTP server used
+    MailIdentityFile = Credentials of the sender used to authenticate with the SMTP.
+                       That file can be created by using: Get-Credential | Export-Clixml -Path $MailIdentityFile
+                       That command must be run in the same context used by the script (Ex: NT AUTHORITY\System) so only that user can read the file.
+
+The following variables are used to authenticate with Microsoft Graph:
+    CertificateThumbprint = Thumbprint of the certificate used to authenticate with Microsoft Graph
+    ApplicationId = Id of the registered app used to authenticate with Microsoft Graph
+    TenantId = Id of the tenant
+
+The Type attribute can be one of: int, bool, string, array, scriptblock
+The type will be used to cast the value in the correct type.
+
+RingList defines the groups used for each ring.
+Each Ring has a name (RingName) and a list of groups (GroupName).
+Leave the GroupName empty for the ring that will use a dynamic query for its group (Broad deployment).
+-->
+
+<IntuneDriverUpdateManagement>
+    <!--  -->
+    <Config Name="Production">
+        <!-- script parameters -->
+        <Param Type="string" Name="GroupNamePrefix">WKS-WIN-TD-DriverUpdate-$Model-$Ring</Param>
+        <Param Type="string" Name="PolicyNamePrefix">WKS WIN Driver Ring $Model ($Ring)</Param>
+        <Param Type="scriptblock" Name="RenameModel">$args[0] -replace '\s+'</Param>
+        <Param Type="int" Name="MinDeviceNumber">10</Param>
+        <Param Type="array" Name="ScopeTag">WKS Global</Param>
+        <Param Type="array" Name="ExcludedManufacturers">Lenovo,HP,VMware</Param>
+        <Param Type="array" Name="GroupOwnersFromUsers"></Param>
+        <Param Type="array" Name="GroupOwnersFromGroups"></Param>
+        <Param Type="int" Name="LogMaxSize">5242880</Param>
+        <!-- Report variables -->
+        <Param Type="bool" Name="ReturnReport">true</Param>
+        <Param Type="bool" Name="DetailedReport">true</Param>
+        <Param Type="bool" Name="ReportToDisk">true</Param>
+        <Param Type="string" Name="ReportPath">$PSScriptParentPath\Reports</Param>
+        <!-- Mail variables -->
+        <Param Type="bool" Name="SendMail">false</Param>
+        <Param Type="string" Name="MailTemplate">$PSScriptParentPath\ReportTemplate.html</Param>
+        <Param Type="string" Name="MailSender"></Param>
+        <Param Type="array" Name="MailRecipient"></Param>
+        <Param Type="array" Name="MailCc"></Param>
+        <Param Type="array" Name="MailAttachment"></Param>
+        <Param Type="string" Name="SmtpServer"></Param>
+        <Param Type="int" Name="SmtpPort"></Param>
+        <Param Type="string" Name="MailIdentityFile">$PSScriptParentPath\..\Mail.xml</Param>
+        <!-- Authentication -->
+        <Param Type="string" Name="CertificateThumbprint"></Param>
+        <Param Type="string" Name="ApplicationId"></Param>
+        <Param Type="string" Name="TenantId"></Param>
+        <!-- List of driver update rings -->
+        <RingList>
+            <Ring RingName="Prod" GroupName=""/>
+            <Ring RingName="Test" GroupName="Group1,Group2"/>
+            <Ring RingName="Pilot" GroupName="Group3,Group4"/>
+        </RingList>
+    </Config>
+</IntuneDriverUpdateManagement>

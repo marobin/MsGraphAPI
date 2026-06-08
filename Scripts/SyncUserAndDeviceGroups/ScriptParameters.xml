@@ -1,0 +1,92 @@
+<!-- 
+Each Config node represents a different set of parameters to be passed to the script.
+
+The Param nodes represent each parameter with its value:
+    OperatingSystems = Limit the script's operations to the specified OS list
+        - All (Disables the operating system filter to include all of them)
+            - Windows (All Windows devices)
+            - AllAndroid (Includes the following)
+                Android
+                AndroidEnterprise
+                AndroidForWork
+            - AlliOS (Includes the following)
+                iOS
+                IPhone
+                IPad
+            - AllMac (Includes the following)
+                macOS
+                MacMDM
+    LogMaxSize = Maximum size of the log file before being rotated (date added as a suffix to the log name)
+    BatchSize = Number of devices to process in each batch
+    WaitTime = Wait time in milliseconds between batches to avoid throttling
+    MaxRetry = Maximum number of retry attempts for failed requests
+
+The following variables are used to generate a json report:
+    ReturnReport = Return statistics report with how many changed objects
+    DetailedReport = Include detailed device status in report
+    ReportToDisk = Save report to disk
+    ReportPath = Path where to save the report
+
+The following variables are used to send the report in an email:
+    SendMail = Should the report be sent by email?
+    MailTemplate = HTML template that can be used as the mail body. PowerShell variables inside the body will be expanded by using the script's variables.
+    MailSender = email address of the sender (from)
+    MailRecipient = email addresses of the email recipients (To)
+    MailCc = email addresses of the email cc recipients (Cc)
+    MailAttachment = Additional attachments besides the json report
+    SmtpServer = SMTP server used to send the email
+    SmtpPort = Port of the SMTP server used
+    MailIdentityFile = Credentials of the sender used to authenticate with the SMTP.
+                       That file can be created by using: Get-Credential | Export-Clixml -Path $MailIdentityFile
+                       That command must be run in the same context used by the script (Ex: NT AUTHORITY\System) so only that user can read the file.
+
+The following variables are used to authenticate with Microsoft Graph:
+    CertificateThumbprint = Thumbprint of the certificate used to authenticate with Microsoft Graph
+    ApplicationId = Id of the registered app used to authenticate with Microsoft Graph
+    TenantId = Id of the tenant
+
+The Type attribute can be one of: int, bool, string, array
+The type will be used to cast the value in the correct type.
+
+The LogAnalytics node represents the information needed to query Log Analytics.
+The sub node must be either Intune (Intune related queries) or EntraId (Sign-in logs) and have the following attributes:
+    SubscriptionId = ID of the subscription where the Log Analytics workspace is located
+    ResourceGroupName = Name of the resource group hosting the Log Analytics workspace
+    workspaceName = Name of the Log Analytics workspace
+    worskpaceId = Id of the Log Analytics workspace
+-->
+
+<SyncUserAndDeviceGroups>
+    <Config Name="TestConfig">
+        <!-- script parameters -->
+        <Param Type="array" Name="OperatingSystems">Windows</Param>
+        <Param Type="int" Name="LogMaxSize">5242880</Param>
+        <Param Type="int" Name="BatchSize">20</Param>
+        <Param Type="int" Name="WaitTime">1000</Param>
+        <Param Type="int" Name="MaxRetry">3</Param>
+        <!-- Report variables -->
+        <Param Type="bool" Name="ReturnReport">true</Param>
+        <Param Type="bool" Name="DetailedReport">true</Param>
+        <Param Type="bool" Name="ReportToDisk">true</Param>
+        <Param Type="string" Name="ReportPath">$PSScriptParentPath\Reports</Param>
+        <!-- Mail variables -->
+        <Param Type="bool" Name="SendMail">false</Param>
+        <Param Type="string" Name="MailTemplate">$PSScriptParentPath\ReportTemplate.html</Param>
+        <Param Type="string" Name="MailSender"></Param>
+        <Param Type="array" Name="MailRecipient"></Param>
+        <Param Type="array" Name="MailCc"></Param>
+        <Param Type="array" Name="MailAttachment"></Param>
+        <Param Type="string" Name="SmtpServer"></Param>
+        <Param Type="int" Name="SmtpPort"></Param>
+        <Param Type="string" Name="MailIdentityFile">$PSScriptParentPath\..\Mail.xml</Param>
+        <!-- Authentication -->
+        <Param Type="string" Name="CertificateThumbprint"></Param>
+        <Param Type="string" Name="ApplicationId"></Param>
+        <Param Type="string" Name="TenantId"></Param>
+        <GroupMembership>
+            <!-- Description -->
+            <Item SourceGroup="" TargetGroup="" SourceType="User" Cleanup="false"/>
+            <Item SourceGroup="" TargetGroup="" SourceType="Device" Cleanup="true"/>
+        </GroupMembership>
+    </Config>
+</SyncUserAndDeviceGroups>

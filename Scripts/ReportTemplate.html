@@ -1,0 +1,44 @@
+<html>
+
+<body>
+    <h4 style="color: #ff0000;">$FirstLine</h4>
+    <h3 style="color: #122147;">Script execution summary:</h3>
+    <table class="ReportTable" style="width: 430px; height: 143px;">
+        <tbody>
+            <tr style="height: 14px;">
+                <td style="color: #122147;width: 120px">Context</td>
+                <td style="text-align: center;">$ScriptContext</td>
+            </tr>
+            <tr style="height: 14px;">
+                <td style="color: #122147;width: 120px">Start Time</td>
+                <td style="text-align: center;">$($reportData.Summary.StartTime)</td>
+            </tr>
+            <tr style="height: 14px;">
+                <td style="color: #122147;width: 120px">Duration</td>
+                <td style="text-align: center;">$($reportData.Summary.Duration)</td>
+            </tr>
+            <tr style="height: 14px;">
+                <td style="color: #122147;width: 120px">Total objects</td>
+                <td style="text-align: center;">$($reportData.Summary.TotalObjects)</td>
+            </tr>
+            <tr style="height: 13px;">
+                <td style="color: #122147;width: 120px">Whould change</td>
+                <td style="text-align: center;">$($reportData.Summary.WouldChange)</td>
+            </tr>
+            <tr style="height: 14px;">
+                <td style="color: #122147;width: 120px">Success</td>
+                <td style="text-align: center;">$($reportData.Summary.ObjectsChanged)</td>
+            </tr>
+            <tr style="height: 14px;">
+                <td style="color: #122147;width: 120px">Skipped</td>
+                <td style="text-align: center;">$($reportData.Summary.ObjectsSkipped)</td>
+            </tr>
+            <tr style="height: 14px;">
+                <td style="color: #122147;width: 120px">Failed</td>
+                <td style="text-align: center;">$($reportData.Summary.ObjectsFailed)</td>
+            </tr>
+        </tbody>
+    </table>
+</body>
+
+</html>
