@@ -18,7 +18,7 @@
     PS C:\>
 
 .NOTES
-    AUTHOR: Marc-Antoine ROBIN (Metsys)
+    AUTHOR: Marc-Antoine ROBIN
     CREATION:
     VERSION: 1.0.0
     MODIFICATIONS:

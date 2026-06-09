@@ -192,7 +192,7 @@ function ConvertFrom-JWTToken {
     PS C:\> Invoke-MgGraphRequest -Method GET -Uri 'v1.0/me' -OutputType 'HttpResponseMessage' | ConvertFrom-JWTToken
 
 .NOTES
-    AUTHOR: Marc-Antoine ROBIN (Metsys)
+    AUTHOR: Marc-Antoine ROBIN
     CREATION:
     VERSION: 1.0.0
     MODIFICATIONS:
@@ -300,7 +300,7 @@ function Test-GraphRequiredScope {
     PS C:\> Get-MgContext | Test-GraphRequiredScope
 
 .NOTES
-    AUTHOR: Marc-Antoine ROBIN (Metsys)
+    AUTHOR: Marc-Antoine ROBIN
     CREATION: 2025-09-28
     VERSION: 1.0.0
     MODIFICATIONS:
@@ -411,7 +411,7 @@ Connect to Microsoft Graph using a secret.
     PS C:\> Connect-MgGraphApplication -TenantId $TenantId -ApplicationId $ClientId
 
 .NOTES
-    AUTHOR: Marc-Antoine ROBIN (Metsys)
+    AUTHOR: Marc-Antoine ROBIN
     CREATION:
     VERSION: 1.0.0
     MODIFICATIONS:
@@ -561,7 +561,7 @@ function Add-MsGraphOAuthAppPermission {
     PS C:\> Add-MsGraphOAuthAppPermission -ApplicationName 'Microsoft Graph Command Line Tools' -Scope 'Sites.ReadWrite.All','Files.ReadWrite.All' -ConsentType AllPrincipals
 
 .NOTES
-    AUTHOR: Marc-Antoine ROBIN (Metsys)
+    AUTHOR: Marc-Antoine ROBIN
     CREATION: 2026-05-26
     VERSION: 1.0.0
     MODIFICATIONS:
@@ -718,7 +718,7 @@ function Invoke-Pim {
     PS C:\> pim
 
 .NOTES
-    AUTHOR: Marc-Antoine ROBIN (Metsys)
+    AUTHOR: Marc-Antoine ROBIN
     CREATION: 2025-09-30
     VERSION: 1.0.0
     MODIFICATIONS:
@@ -831,7 +831,7 @@ function Get-PimHistory {
     PS C:\> pimh | Where-Object -Property Role -match 'Intune'
 
 .NOTES
-    AUTHOR: Marc-Antoine ROBIN (Metsys)
+    AUTHOR: Marc-Antoine ROBIN
     CREATION: 2025-09-30
     VERSION: 1.0.0
     MODIFICATIONS:
@@ -1041,25 +1041,25 @@ HttpMethod       : GET
 TargetWorkloadId : Microsoft.DirectoryServices
 
 .NOTES
-    AUTHOR: Tbone Granheden / Marc-Antoine ROBIN (Metsys)
+    AUTHOR: Tbone Granheden / Marc-Antoine ROBIN
     CREATION:
     VERSION: 1.4.1
     MODIFICATIONS:
-        - 2025-09-22 - Marc-Antoine ROBIN (Metsys) - Code cleanup, added the Write-Log function
-        - 2026-01-29 - Marc-Antoine ROBIN (Metsys)
+        - 2025-09-22 - Marc-Antoine ROBIN - Code cleanup, added the Write-Log function
+        - 2026-01-29 - Marc-Antoine ROBIN
             Added SkipToken, Search and Format parameters
             Added global variables to hold @odata.nextlink (_GraphAPINextLink) and @odata.count (_GraphAPICount)
             Avoid processing the query if not authenticated
             Handle the 401 status code
-        - 2026-03-28 - Marc-Antoine ROBIN (Metsys) - Added the WhatIf capability
-        - 2026-03-30 - Marc-Antoine ROBIN (Metsys)
+        - 2026-03-28 - Marc-Antoine ROBIN - Added the WhatIf capability
+        - 2026-03-30 - Marc-Antoine ROBIN
             Cleanup the retry logic by using a list of non-retryable status codes
             Exit the function if a paging loop is detected
-        - 2026-04-30 - Marc-Antoine ROBIN (Metsys)
+        - 2026-04-30 - Marc-Antoine ROBIN
             Added the OutputFilePath and ContentType parameters
-        - 2026-06-04 - Marc-Antoine ROBIN (Metsys)
+        - 2026-06-04 - Marc-Antoine ROBIN
             Add automatic OutputFilePath if required but not specified
-        - 2026-06-08 - Marc-Antoine ROBIN (Metsys)
+        - 2026-06-08 - Marc-Antoine ROBIN
             Add delta query capability
 
     TODO: Add the same capabilities as Invoke-MgGraphRequest
@@ -1754,17 +1754,17 @@ Execute 4 queries at the same time:
     Invoke-MgGraphRequestBatch -Hashtable $HashTable
 
 .NOTES
-    AUTHOR: Tbone Granheden / Marc-Antoine ROBIN (Metsys)
+    AUTHOR: Tbone Granheden / Marc-Antoine ROBIN
     CREATION:
     VERSION: 1.2.4
     MODIFICATIONS:
-        - 2025-09-19 - Marc-Antoine ROBIN (Metsys) - Function cleanup + Write-Log used instead of Write-Verbose/Warning/Error
-        - 2025-09-25 - Marc-Antoine ROBIN (Metsys) - Added the hashtable parameter
-        - 2026-01-25 - Marc-Antoine ROBIN (Metsys)
+        - 2025-09-19 - Marc-Antoine ROBIN - Function cleanup + Write-Log used instead of Write-Verbose/Warning/Error
+        - 2025-09-25 - Marc-Antoine ROBIN - Added the hashtable parameter
+        - 2026-01-25 - Marc-Antoine ROBIN
             Avoid processing the query if not authenticated
             Handle the 401 status code
             Fix the wait behavior for throttled queries where every batch was slowed down as soon as one contained a 429 code instead of looking for a 429 code in the current batch.
-        - 2026-03-30 - Marc-Antoine ROBIN (Metsys) - Cleanup the retry logic by using a list of non-retryable status codes
+        - 2026-03-30 - Marc-Antoine ROBIN - Cleanup the retry logic by using a list of non-retryable status codes
 
 .LINK
 
@@ -2289,7 +2289,7 @@ function Get-EntraIdSignInLog {
     (Ex:  appDisplayName, clientAppUsed, status/errorCode, ...)
 
 .NOTES
-    AUTHOR: Marc-Antoine ROBIN (Metsys)
+    AUTHOR: Marc-Antoine ROBIN
     CREATION: 2025-10-08
     MODIFICATIONS:
 
@@ -2505,7 +2505,7 @@ Return the id, status, displayName, and membershiprule of the group with the spe
     PS C:\> Get-EntraIdGroupInfo -id '69b00000-f697-48e7-a81a-81c44eccb120', '62c50afe-366c-4e8c-953d-43ce6efad82e' -OwnersCount -MembersCount -Property 'displayName','membershiprule' -QuerySoftDeletedGroup
 
 .NOTES
-    AUTHOR: Marc-Antoine ROBIN (Metsys)
+    AUTHOR: Marc-Antoine ROBIN
     CREATION: 2026-02-02
     VERSION: 1.0.0
     MODIFICATIONS:
@@ -2685,7 +2685,7 @@ Get the user members of the 3 groups named Group1,Group2, and Group3.
     PS C:\> Get-EntraIdGroupMembership -Name 'Group1','Group2','Group3' -Type user -PropertyList 'id','displayName','userPrincipalName'
 
 .NOTES
-    AUTHOR: Marc-Antoine ROBIN (Metsys)
+    AUTHOR: Marc-Antoine ROBIN
     CREATION: 2025-09-29
     VERSION: 1.1.0
     MODIFICATIONS:
@@ -2837,7 +2837,7 @@ function New-EntraIdGroup {
     PS C:\> New-EntraIdGroup
 
 .NOTES
-    AUTHOR: Marc-Antoine ROBIN (Metsys)
+    AUTHOR: Marc-Antoine ROBIN
     CREATION: 2025-09-28
     VERSION: 1.0.0
     MODIFICATIONS:
@@ -3012,7 +3012,7 @@ function Add-EntraIdGroupMember {
     PS C:\> Add-EntraIdGroupMember
 
 .NOTES
-    AUTHOR: Marc-Antoine ROBIN (Metsys)
+    AUTHOR: Marc-Antoine ROBIN
     CREATION: 2025-09-28
     VERSION: 1.0.0
     MODIFICATIONS:
@@ -3169,7 +3169,7 @@ function Remove-EntraIdGroupMember {
     PS C:\> Remove-EntraIdGroupMember
 
 .NOTES
-    AUTHOR: Marc-Antoine ROBIN (Metsys)
+    AUTHOR: Marc-Antoine ROBIN
     CREATION: 2025-09-28
     VERSION: 1.0.0
     MODIFICATIONS:
@@ -3314,7 +3314,7 @@ function Add-EntraIdGroupOwner {
     PS C:\> Add-EntraIdGroupOwner -GroupId 'xxxx' -Owner 'yyyy','zzzz'
 
 .NOTES
-    AUTHOR: Marc-Antoine ROBIN (Metsys)
+    AUTHOR: Marc-Antoine ROBIN
     CREATION: 2025-09-28
     VERSION: 1.0.0
     MODIFICATIONS:
@@ -3439,7 +3439,7 @@ function Remove-EntraIdGroupOwner {
     PS C:\> Remove-EntraIdGroupOwner -GroupId 'xxxx' -Owner 'yyyy','zzzz'
 
 .NOTES
-    AUTHOR: Marc-Antoine ROBIN (Metsys)
+    AUTHOR: Marc-Antoine ROBIN
     CREATION: 2025-09-28
     VERSION: 1.0.0
     MODIFICATIONS:
@@ -3560,7 +3560,7 @@ function Get-IntuneAuditLog {
     PS C:\>
 
 .NOTES
-    AUTHOR: Marc-Antoine ROBIN (Metsys)
+    AUTHOR: Marc-Antoine ROBIN
     CREATION:
     VERSION: 1.0.0
     MODIFICATIONS:
@@ -3746,7 +3746,7 @@ function Resolve-CloudResourceId {
     PS C:\>
 
 .NOTES
-    AUTHOR: Marc-Antoine ROBIN (Metsys)
+    AUTHOR: Marc-Antoine ROBIN
     CREATION:
     VERSION: 1.0.0
     MODIFICATIONS:
@@ -3920,7 +3920,7 @@ function ConvertFrom-IntuneAssignmentTarget {
     PS C:\> $PolicyAssignment | ConvertFrom-IntuneAssignmentTarget -Groups $GroupList -Filters $FilterList -DeviceCount $AllDevicesCount -UserCount $AllUsersCount
 
 .NOTES
-    AUTHOR: Marc-Antoine ROBIN (Metsys)
+    AUTHOR: Marc-Antoine ROBIN
     CREATION: 2025-12-18
     VERSION: 1.0.0
     MODIFICATIONS:
@@ -4143,11 +4143,11 @@ function Get-IntuneAssignment {
     PS C:\> Get-IntuneAssignment -Category 'Configuration policies', 'Scripts'
 
 .NOTES
-    AUTHOR: Marc-Antoine ROBIN (Metsys)
+    AUTHOR: Marc-Antoine ROBIN
     CREATION: 2025-12-18
     VERSION: 1.1.0
     MODIFICATIONS:
-        2026-02-16 - M-A ROBIN (Metsys): Added the role assignments
+        2026-02-16 - M-A ROBIN: Added the role assignments
 
 .LINK
 
@@ -4643,7 +4643,7 @@ function Get-IntunePolicyChangeLog {
     PS C:\>
 
 .NOTES
-    AUTHOR: Marc-Antoine ROBIN (Metsys)
+    AUTHOR: Marc-Antoine ROBIN
     CREATION:
     VERSION: 1.0.0
     MODIFICATIONS:
@@ -4770,7 +4770,7 @@ function Get-IntunePolicyPlatformAndType {
     Type = 'Administrative templates'
 
 .NOTES
-    AUTHOR: Marc-Antoine ROBIN (Metsys)
+    AUTHOR: Marc-Antoine ROBIN
     CREATION: 2026-01-24
     VERSION: 1.0.0
     MODIFICATIONS:
@@ -5239,7 +5239,7 @@ function Resolve-SettingUriToUrl {
     ) | Resolve-SettingUriToUrl | ft -AutoSize
 
 .NOTES
-    AUTHOR: Marc-Antoine ROBIN (Metsys)
+    AUTHOR: Marc-Antoine ROBIN
     CREATION: 2026-04-01
     VERSION: 1.0.0
     MODIFICATIONS:
@@ -5429,7 +5429,7 @@ function Get-IntunePolicy {
     PS C:\>
 
 .NOTES
-    AUTHOR: Marc-Antoine ROBIN (Metsys)
+    AUTHOR: Marc-Antoine ROBIN
     CREATION: 2025-09-30
     VERSION: 1.0.0
     MODIFICATIONS:
@@ -5969,7 +5969,7 @@ function Export-IntunePolicy {
     PS C:\>
 
 .NOTES
-    AUTHOR: Marc-Antoine ROBIN (Metsys)
+    AUTHOR: Marc-Antoine ROBIN
     CREATION: 2025-09-30
     VERSION: 1.0.0
     MODIFICATIONS:
@@ -6051,7 +6051,7 @@ function Import-IntunePolicy {
     PS C:\>
 
 .NOTES
-    AUTHOR: Marc-Antoine ROBIN (Metsys)
+    AUTHOR: Marc-Antoine ROBIN
     CREATION: 2026-03-09
     VERSION: 1.0.0
     MODIFICATIONS:
@@ -6274,7 +6274,7 @@ function Export-IntunePolicyToExcel {
     PS C:\>
 
 .NOTES
-    AUTHOR: Marc-Antoine ROBIN (Metsys)
+    AUTHOR: Marc-Antoine ROBIN
     CREATION: 2026-05-19
     VERSION: 1.0.0
     MODIFICATIONS:
@@ -7395,7 +7395,7 @@ function Get-IntunePolicyTemplate {
     PS C:\> Get-IntunePolicyTemplate
 
 .NOTES
-    AUTHOR: Marc-Antoine ROBIN (Metsys)
+    AUTHOR: Marc-Antoine ROBIN
     CREATION: 2025-10-01
     VERSION: 1.0.0
     MODIFICATIONS:
@@ -7516,7 +7516,7 @@ function Get-IntuneTemplate {
     PS C:\> Get-IntuneTemplate
 
 .NOTES
-    AUTHOR: Marc-Antoine ROBIN (Metsys)
+    AUTHOR: Marc-Antoine ROBIN
     CREATION: 2026-01-15
     VERSION: 1.0.0
     MODIFICATIONS:
@@ -7624,7 +7624,7 @@ function Get-IntuneSettingCategory {
     PS C:\> Get-IntuneSettingCategory -AsHashtable -NameOnly
 
 .NOTES
-    AUTHOR: Marc-Antoine ROBIN (Metsys)
+    AUTHOR: Marc-Antoine ROBIN
     CREATION: 2026-06-03
     VERSION: 1.0.0
     MODIFICATIONS:
@@ -7754,7 +7754,7 @@ Return scope tags that are named either ScopeTag1 or ScopeTag2.
     PS C:\> Get-IntuneScopeTag -Name 'ScopeTag1','ScopeTag2'
 
 .NOTES
-    AUTHOR: Marc-Antoine ROBIN (Metsys)
+    AUTHOR: Marc-Antoine ROBIN
     CREATION: 2026-01-14
     VERSION: 1.0.0
     MODIFICATIONS:
@@ -7852,7 +7852,7 @@ Return the roles named either "Policy and Profile manager" or "Custom role 1".
     PS C:\> Get-IntuneRBACRole -DisplayName "Policy and Profile manager","Custom role 1"
 
 .NOTES
-    AUTHOR: Marc-Antoine ROBIN (Metsys)
+    AUTHOR: Marc-Antoine ROBIN
     CREATION: 2026-01-14
     VERSION: 1.0.0
     MODIFICATIONS:
@@ -8002,7 +8002,7 @@ function Get-IntuneAssignmentFilter {
     PS C:\> Get-IntuneAssignmentFilter -displayName 'Filter1','Filter2'
 
 .NOTES
-    AUTHOR: Marc-Antoine ROBIN (Metsys)
+    AUTHOR: Marc-Antoine ROBIN
     CREATION: 2026-03-11
     VERSION: 1.0.0
     MODIFICATIONS:
@@ -8278,7 +8278,7 @@ function Get-IntuneHealthScript {
     PS C:\>
 
 .NOTES
-    AUTHOR: Marc-Antoine ROBIN (Metsys)
+    AUTHOR: Marc-Antoine ROBIN
     CREATION:
     VERSION: 1.0.0
     MODIFICATIONS:
@@ -8504,7 +8504,7 @@ Download every script in the IntuneScripts located in the current user's profile
     PS C:\> Invoke-IntuneHealthScriptDownload -displayName 'WKS WIN Remediate WindowsUpdate', '' -Destination "$Env:userprofile\IntuneScripts"
 
 .NOTES
-    AUTHOR: Marc-Antoine ROBIN (Metsys)
+    AUTHOR: Marc-Antoine ROBIN
     CREATION: 2025-10-06
     VERSION: 1.0.0
     MODIFICATIONS:
@@ -8612,7 +8612,7 @@ function Get-IntunePlatformScript {
     PS C:\>
 
 .NOTES
-    AUTHOR: Marc-Antoine ROBIN (Metsys)
+    AUTHOR: Marc-Antoine ROBIN
     CREATION: 2026-03-09
     VERSION: 1.0.0
     MODIFICATIONS:
@@ -8792,7 +8792,7 @@ Download every script in the IntuneScripts located in the current user's profile
     PS C:\> Invoke-IntunePlatformScriptDownload -displayName 'WKS WIN WindowsUpdate', '' -Destination "$Env:userprofile\IntuneScripts"
 
 .NOTES
-    AUTHOR: Marc-Antoine ROBIN (Metsys)
+    AUTHOR: Marc-Antoine ROBIN
     CREATION: 2026-03-09
     VERSION: 1.0.0
     MODIFICATIONS:
@@ -8963,7 +8963,7 @@ function Convert-PSObjectArrayToHashTable {
     PS C:\> Get-Service | Convert-PSObjectArrayToHashTable -idProperty status -AllowClobber
 
 .NOTES
-    AUTHOR: Marc-Antoine ROBIN (Metsys)
+    AUTHOR: Marc-Antoine ROBIN
     CREATION: 2026-01-21
     VERSION: 1.0.0
     MODIFICATIONS:
@@ -9107,7 +9107,7 @@ function Send-GraphMail {
     PS C:\>
 
 .NOTES
-    AUTHOR: Marc-Antoine ROBIN (Metsys)
+    AUTHOR: Marc-Antoine ROBIN
     CREATION: 2025-10-27
     VERSION: 1.0.0
     MODIFICATIONS:
@@ -9558,7 +9558,7 @@ Download only the file which name equals "test.txt"
     PS C:\> Invoke-SPFileDownload -SiteName 'MySPSite' -DriveName 'Documents' -Search 'test.txt' -ExactMatch -Destination 'C:\temp'
 
 .NOTES
-    AUTHOR: Marc-Antoine ROBIN (Metsys)
+    AUTHOR: Marc-Antoine ROBIN
     CREATION: 2026-05-13
     VERSION: 1.0.0
     MODIFICATIONS:
@@ -9782,7 +9782,7 @@ Upload all the Excel files in C:\temp to the Documents drive of the MySPSite sit
     PS C:\> Get-ChildItem -Path 'C:\temp' -Filter '*.xlsx' | Invoke-SPFileUpload -SiteName 'MySPSite' -DriveName 'Documents' -Directory 'Path\Of destination' -UploadSession
 
 .NOTES
-    AUTHOR: Marc-Antoine ROBIN (Metsys)
+    AUTHOR: Marc-Antoine ROBIN
     CREATION: 2026-05-13
     VERSION: 1.0.0
     MODIFICATIONS:
@@ -10043,7 +10043,7 @@ function Test-SPFolder {
     PS C:\> Test-SPFolder -Directory 'Path\Of destination' -SiteName 'MySPSite' -DriveName 'Documents' -PassThru -ChildProperty ('id', 'name')
 
 .NOTES
-    AUTHOR: Marc-Antoine ROBIN (Metsys)
+    AUTHOR: Marc-Antoine ROBIN
     CREATION: 2026-05-13
     VERSION: 1.0.0
     MODIFICATIONS:
@@ -10232,7 +10232,7 @@ function New-SPFolder {
     PS C:\> New-SPFolder -Directory 'Path\Of destination' -SiteName 'MySPSite' -DriveName 'Documents'
 
 .NOTES
-    AUTHOR: Marc-Antoine ROBIN (Metsys)
+    AUTHOR: Marc-Antoine ROBIN
     CREATION: 2026-05-13
     VERSION: 1.0.0
     MODIFICATIONS:
