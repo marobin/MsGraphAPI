@@ -4898,6 +4898,7 @@ function Get-IntunePolicyPlatformAndType {
             }
             elseif ("$odataType" -ne '') {
                 switch -regex ($odataType) {
+                    'macOSDmgApp' { 'macOS app (DMG)'; break }
                     'androidLobApp' { 'Android line-of-business app'; break }
                     'androidStoreApp' { 'Android store app' ; break }
                     'androidManagedStoreWebApp' { 'Managed Google Play web link' ; break }
