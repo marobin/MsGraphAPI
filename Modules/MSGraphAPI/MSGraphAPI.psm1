@@ -1358,7 +1358,12 @@ TargetWorkloadId : Microsoft.DirectoryServices
                 $i = 1
                 :UriLoop do {
                     $response = $null
-                    Write-Log -Message "[$InvocationName] Requesting page $i with $PageSize items" -Type Debug
+                    if ($Method -eq 'GET') {
+                        Write-Log -Message "[$InvocationName] Requesting page $i with $PageSize items" -Type Debug
+                    }
+                    else {
+                        Write-Log -Message "[$InvocationName] Sending request with $Method method" -Type Debug
+                    }
                     #Set default parameters for Invoke-MgGraphRequest
                     $params = @{
                         Method      = $Method
@@ -1378,21 +1383,31 @@ TargetWorkloadId : Microsoft.DirectoryServices
                         $params.ContentType = "$ContentType"
                     }
                     # add additional parameters based on method
-                    if ($Method -in 'POST', 'PATCH', 'PUT') {
+                    if (($Method -in 'POST', 'PATCH', 'PUT') -and ($null -ne $Body)) {
                         $params.Body = $Body
                         $params.Headers.'Content-Type' = 'application/json'
-                        Write-Log -Message "[$InvocationName] Request body: $($Body | ConvertTo-Json -Depth $JsonDepth)" -Type Debug
+                        if ($body.count -lt 50) {
+                            Write-Log -Message "[$InvocationName] Request body: $($Body | ConvertTo-Json -Depth $JsonDepth)" -Type Debug
+                        }
+                        else {
+                            Write-Log -Message "[$InvocationName] Request body is too big to be shown ($($body.count))" -Type Debug
+                        }
+                        $body = $null
+                        [System.GC]::GetTotalMemory($true)
                     }
                     #send request to Graph API
                     try {
                         if ($headers.Keys.Count -eq 0) { $Params.Remove('Headers') }
                         $response = Invoke-MgGraphRequest @params
+                        $params.Clear()
                         Write-Log -Message "[$InvocationName] Request successful" -Type Debug
                     }
                     catch {
+                        $params.Clear()
                         throw "Request failed with error: $_"
                     }
-                    if ($Method -eq 'POST') {
+                    if ($Method -in ('POST','PUT','PATCH') -and ($null -eq $response.value)) {
+                        Write-Log -Message "[$InvocationName] $Method answer delivered" -Type Debug
                         return $response
                     }
                     if ($null -ne $response.value) {
@@ -1433,17 +1448,20 @@ TargetWorkloadId : Microsoft.DirectoryServices
                             # The previous @odata.nextlink is equal to the current one which indicates a paging loop
                             $Global:_GraphAPINextLink = $uri = ''
                             Write-Log -Message "[$InvocationName] Found a paging loop, exiting." -Type Warning
+                            $response = $null
                             return
                         }
                     }
                     elseif ($response.PSObject.Properties.Name -contains '@odata.deltaLink') {
-                        [String]$_GraphAPIDeltaLink = $response.'@odata.deltaLink'
+                        [String]$Global:_GraphAPIDeltaLink = $response.'@odata.deltaLink'
                         $uri = ''
+                        $response = $null
                         return
                     }
                     else {
                         Write-Log -Message "[$InvocationName] No more pages found" -Type Debug
                         $uri = ''
+                        $response = $null
                         return
                     }
 
