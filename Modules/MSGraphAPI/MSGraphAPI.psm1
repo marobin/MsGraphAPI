@@ -9849,7 +9849,12 @@ Upload all the Excel files in C:\temp to the Documents drive of the MySPSite sit
         [Parameter(Mandatory = $true, Position = 0, ParameterSetName = 'SiteId-Directory-DriveId', ValueFromPipelineByPropertyName = $true, ValueFromPipeline = $true)]
         [Parameter(Mandatory = $true, Position = 0, ParameterSetName = 'SiteId-ParentId-DriveName', ValueFromPipelineByPropertyName = $true, ValueFromPipeline = $true)]
         [Parameter(Mandatory = $true, Position = 0, ParameterSetName = 'SiteId-ParentId-DriveId', ValueFromPipelineByPropertyName = $true, ValueFromPipeline = $true)]
-        [ValidateScript({ Test-Path -LiteralPath $_ -PathType Leaf })]
+        [ValidateScript({
+                if ($Missing = $_ | Where-Object { ! (Test-Path -LiteralPath "$_") -or ((Get-Item -LiteralPath "$_").Length -le 0) }) {
+                    throw "The following file does not exist: $($Missing -join ', ')"
+                }
+                else { $true }
+            })]
         [Alias('FullName')]
         [String[]]$Path,
 
