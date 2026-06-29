@@ -6336,8 +6336,15 @@ function Export-IntunePolicyToExcel {
         [Switch]$Show
     )
 
-    #region variables
+    if ($Global:PSDefaultParameterValues.Keys.Count -gt 0) {
+        $PSDefaultParameterValues = $Global:PSDefaultParameterValues.Clone()
+    }
+    else {
+        $PSDefaultParameterValues.Clear()
+    }
 
+    #region variables
+    $InvocationName = $MyInvocation.MyCommand.Name
     if (($null -eq (Get-MgContext)) -and ($null -eq $PSBoundParameters['InputObject'])) {
         throw 'Connect to the Graph API before using this function'
     }
@@ -6349,13 +6356,15 @@ function Export-IntunePolicyToExcel {
     }
 
     # Path of the Excel file
-    if (Test-Path -LiteralPath $Destination -PathType Leaf) {
-        $Path = $Destination
-        $PrevSummaryHash = Import-Excel -Path "$Path" -WorksheetName $SummaryWorksheetName -AsText '*' | Convert-PSObjectArrayToHashTable -idProperty 'Policy id' -Property 'Status', 'Comment', 'Policy scope' -Verbose:$false
+    if (Test-Path -LiteralPath $Destination -PathType Container) {
+        [String]$Path = '{0}\{1}-IntunePolicies-{2}.xlsx' -f $Destination, ($Platform -join '_'), (Get-Date -Format 'yyyyMMdd_HHmm')
     }
     else {
-        $Path = '{0}\{1}-IntunePolicies-{2}.xlsx' -f $Destination, ($Platform -join '_'), (Get-Date -Format 'yyyyMMdd_HHmm')
-        $PrevSummaryHash = @{}
+        [String]$Path = $Destination
+    }
+    $PrevSummaryHash = @{}
+    if (Test-Path -LiteralPath $Path -PathType Leaf) {
+        $PrevSummaryHash = Import-Excel -Path "$Path" -WorksheetName $SummaryWorksheetName -AsText '*' | Convert-PSObjectArrayToHashTable -idProperty 'Policy id' -Property 'Status', 'Comment', 'Policy scope' -Verbose:$false
     }
 
     #region Excel conditional formatting
@@ -6727,10 +6736,10 @@ Expand-ByteArray -ByteArray ([byte[]]((Get-Clipboard).Split('] ')[-1].Split(',')
     }
 
     if (Test-Path -LiteralPath $Path) {
-        Write-Verbose -Message "Using the existing file [$Path]"
+        Write-Log -Message "[$InvocationName] Using the existing file [$Path]"
     }
     else {
-        Write-Verbose -Message "Creating the file [$Path]"
+        Write-Log -Message "[$InvocationName] Creating the file [$Path]"
     }
     $Excel = Open-ExcelPackage -Path $Path -Create -Verbose:$false
 
@@ -6738,7 +6747,7 @@ Expand-ByteArray -ByteArray ([byte[]]((Get-Clipboard).Split('] ')[-1].Split(',')
     [uint16]$WIndex = 1
     if ($null -ne $Worksheet) {
         [uint16]$WIndex = $Worksheet.Index
-        Write-Verbose -Message "Removing existing worksheet named [$($Worksheet.Name)] at index $WIndex"
+        Write-Log -Message "[$InvocationName] Removing existing worksheet named [$($Worksheet.Name)] at index $WIndex"
         $Excel.Workbook.Worksheets.Delete($Worksheet.Index)
     }
     $Worksheet = Add-Worksheet -ExcelPackage $Excel -WorksheetName $SummaryWorksheetName
@@ -6784,7 +6793,7 @@ Expand-ByteArray -ByteArray ([byte[]]((Get-Clipboard).Split('] ')[-1].Split(',')
     #https://epplussoftware.com/docs/5.1/api/OfficeOpenXml.ExcelWorksheetView.html#OfficeOpenXml_ExcelWorksheetView_FreezePanes_System_Int32_System_Int32_
     $Worksheet.View.FreezePanes(2, 3)
 
-    Write-Verbose -Message "Create the [$SummaryWorksheetName] worksheet with $(($PolicyList | Measure-Object).Count) policies"
+    Write-Log -Message "[$InvocationName] Create the [$SummaryWorksheetName] worksheet with $(($PolicyList | Measure-Object).Count) policies"
     foreach ($Policy in $PolicyList) {
         $ASIncludedList = $Policy.assignments | Where-Object -Property Action -EQ 'Include'
         $ASExcludedList = $Policy.assignments | Where-Object -Property Action -EQ 'Exclude'
@@ -6859,6 +6868,8 @@ Expand-ByteArray -ByteArray ([byte[]]((Get-Clipboard).Split('] ')[-1].Split(',')
             $SumColumn++
         }
     }
+    $PrevSummaryHash.Clear()
+    $ColumnList.Clear()
     $Range = $Worksheet.Cells["A1:$((Get-ExcelColumnName -ColumnNumber ($SumColumn - 1)).ColumnName)$SumRow"]
     Add-ExcelTable -Range $Range -TableName 'Summary' @ETParams
     # Auto fit the columns and correct the width of those that should be a fixed size
@@ -6871,6 +6882,7 @@ Expand-ByteArray -ByteArray ([byte[]]((Get-Clipboard).Split('] ')[-1].Split(',')
         }
         $Index++
     }
+    $ColumnHeader.Clear()
     if ($Platform.Count -eq 1) {
         # Hide the Platforms columns if a single platform is specfied in the parameter
         $Worksheet.Column(4).Hidden = $true
@@ -6908,7 +6920,7 @@ Expand-ByteArray -ByteArray ([byte[]]((Get-Clipboard).Split('] ')[-1].Split(',')
 
     #region Details
     # Group the policies by type, the group name is used as worksheet name
-    Write-Verbose -Message 'Grouping policies by type'
+    Write-Log -Message "[$InvocationName] Grouping policies by type"
     $PolicyGroupList = $PolicyList | Group-Object -Property @{
         Expression = {
             switch -regex ($_.Type) {
@@ -6921,14 +6933,16 @@ Expand-ByteArray -ByteArray ([byte[]]((Get-Clipboard).Split('] ')[-1].Split(',')
         }
     } |
         Sort-Object -Property { $_.Name.Length } -Descending
+    $Worksheet = $PolicyList = $null
+    $null = [System.GC]::GetTotalMemory($true)
 
     foreach ($PolicyGroup in $PolicyGroupList) {
-        Write-Verbose -Message "==========Processing $($PolicyGroup.Count) [$($PolicyGroup.Name)] policie(s)=========="
+        Write-Log -Message "[$InvocationName] ==========Processing $($PolicyGroup.Count) [$($PolicyGroup.Name)] policie(s)=========="
         $WorksheetName = $PolicyGroup.Name
         $Worksheet = $Excel.Workbook.Worksheets | Where-Object -Property Name -EQ $WorksheetName
         if ($null -ne $Worksheet) {
             $PrevCommentHash = Import-Excel -Path "$Path" -WorksheetName $WorksheetName -AsText '*' | Select-Object -Property 'Policy name', 'Comment' | Convert-PSObjectArrayToHashTable -idProperty 'Policy name' -Verbose:$false
-            Write-Verbose -Message "Removing existing worksheet named [$($Worksheet.Name)]"
+            Write-Log -Message "[$InvocationName] Removing existing worksheet named [$($Worksheet.Name)]"
             $Excel.Workbook.Worksheets.Delete($Worksheet.Index)
         }
         else {
@@ -6972,9 +6986,9 @@ Expand-ByteArray -ByteArray ([byte[]]((Get-Clipboard).Split('] ')[-1].Split(',')
                 $Worksheet.View.FreezePanes(2, 3)
 
                 $DetailColumn = 1
-                foreach ($Policy in $PolicyGroup.Group) {
+                foreach ($Policy in ($PolicyGroup.Group | Sort-Object -Property Name)) {
                     $DetailHash["$($Policy.id)"] = "'$WorksheetName'!A$($DetailRow + 1)"
-                    Write-Verbose -Message "  [$($Policy.Name)]"
+                    Write-Log -Message "  [$($Policy.Name)]"
                     foreach ($Setting in $Policy.Settings) {
                         $DetailRow++
                         $DetailColumn = 1
@@ -7076,8 +7090,8 @@ Expand-ByteArray -ByteArray ([byte[]]((Get-Clipboard).Split('] ')[-1].Split(',')
                 $Worksheet.View.FreezePanes(2, 3)
 
                 $DetailColumn = 1
-                foreach ($Policy in $PolicyGroup.Group) {
-                    Write-Verbose -Message "  [$($Policy.Name)]"
+                foreach ($Policy in ($PolicyGroup.Group | Sort-Object -Property Name)) {
+                    Write-Log -Message "  [$($Policy.Name)]"
                     $DetailHash["$($Policy.id)"] = "'$WorksheetName'!A$($DetailRow + 1)"
                     foreach ($Setting in $Policy.Settings) {
                         $DetailRow++
@@ -7111,6 +7125,7 @@ Expand-ByteArray -ByteArray ([byte[]]((Get-Clipboard).Split('] ')[-1].Split(',')
                         }
                     }
                 }
+
                 # Extra parameters for duplicated conditional formatting
                 $CIndex = 'G'
                 if ($DescriptionInfo -match 'Column') {
@@ -7155,8 +7170,8 @@ Expand-ByteArray -ByteArray ([byte[]]((Get-Clipboard).Split('] ')[-1].Split(',')
                 $Worksheet.View.FreezePanes(2, 3)
 
                 $DetailColumn = 1
-                foreach ($Policy in $PolicyGroup.Group) {
-                    Write-Verbose -Message "  [$($Policy.Name)]"
+                foreach ($Policy in ($PolicyGroup.Group | Sort-Object -Property Name)) {
+                    Write-Log -Message "  [$($Policy.Name)]"
                     $DetailHash["$($Policy.id)"] = "'$WorksheetName'!A$($DetailRow + 1)"
                     foreach ($SettingGroup in ($Policy.Settings | Group-Object -Property ParentSettingName | Sort-Object -Property Name)) {
                         $DetailRow++
@@ -7184,6 +7199,7 @@ Expand-ByteArray -ByteArray ([byte[]]((Get-Clipboard).Split('] ')[-1].Split(',')
                             New-RowItem -Worksheet $Worksheet -row $DetailRow -Column $DetailColumn @ColumnItem
                             $DetailColumn++
                         }
+                        $SettingHash = $null
                     }
                 }
                 $ExtraDupCF = @{ Address = 'C:C' } # Extra parameters for duplicated conditional formatting
@@ -7191,6 +7207,10 @@ Expand-ByteArray -ByteArray ([byte[]]((Get-Clipboard).Split('] ')[-1].Split(',')
             }
             #endregion Firewall rules
         }
+        Remove-Variable -Name 'DefaultValueStr','ValueStr','ValueComment' -Force -EA Ignore
+
+        $ColumnList.Clear()
+        $ColumnList = $null
         $ColumnName = (Get-ExcelColumnName -ColumnNumber ($DetailColumn - 1)).ColumnName
         $Range = $Worksheet.Cells["A1:$($ColumnName)$DetailRow"]
         Add-ExcelTable -Range $Range @ETParams
@@ -7218,6 +7238,11 @@ Expand-ByteArray -ByteArray ([byte[]]((Get-Clipboard).Split('] ')[-1].Split(',')
         }
         #$Worksheet.Column(($DetailColumn - 1)).Hidden = $true # Hide the last "Policy status" column (used for conditional formatting only)
         $Worksheet.Column(($ColumnHeader.Name.IndexOf('Policy status') + 1)).Hidden = $true # Hide the "Policy status" column (used for conditional formatting only)
+        $ColumnHeader.Clear()
+        Remove-Variable -Name 'ColumnHeader','Worksheet','Range' -Force -EA Ignore
+        $MemoryUsage = [Math]::Round(([System.GC]::GetTotalMemory($false) / 1MB), 2)
+        $NewMemoryUsage = [Math]::Round(([System.GC]::GetTotalMemory('forcefullcollection') / 1MB), 2)
+        Write-Verbose -Message "[$InvocationName] Memory usage: $MemoryUsage MB (After collection: $NewMemoryUsage MB)"
     }
 
     # Link the "Policy id" (Summary worksheet) to the corresponding policy's settings
@@ -7231,16 +7256,18 @@ Expand-ByteArray -ByteArray ([byte[]]((Get-Clipboard).Split('] ')[-1].Split(',')
         $Worksheet.Cells["A$Row"].Style.Font.Color.SetColor([System.Drawing.Color]0x467886)
         $Worksheet.Cells["A$Row"].Style.Font.UnderLine = $true
     }
+    $DetailHash.Clear()
+    $SummaryHash.Clear()
     #endregion Details
 
     Select-Worksheet -ExcelPackage $Excel -WorksheetName $SummaryWorksheetName -Verbose:$false
     Close-ExcelPackage -ExcelPackage $Excel -Show:$Show -Verbose:$false
 
-    $PolicyList = $null
+    Remove-Variable -Name 'DetailHash','Worksheet','PolicyGroup','PolicyGroupList','PolicyList','Excel' -Force -EA Ignore
     # End function and report memory usage, before and after cleaning it up
     $MemoryUsage = [Math]::Round(([System.GC]::GetTotalMemory($false) / 1MB), 2)
     $NewMemoryUsage = [Math]::Round(([System.GC]::GetTotalMemory('forcefullcollection') / 1MB), 2)
-    Write-Verbose -Message "Memory usage: $MemoryUsage MB (After collection: $NewMemoryUsage MB)"
+    Write-Log -Message "[$InvocationName] Memory usage: $MemoryUsage MB (After collection: $NewMemoryUsage MB)"
 
     #endregion main
     $ErrorActionPreference = 'Continue'
