@@ -6950,7 +6950,8 @@ Expand-ByteArray -ByteArray ([byte[]]((Get-Clipboard).Split('] ')[-1].Split(',')
         }
         $Worksheet = Add-Worksheet -ExcelPackage $Excel -WorksheetName $WorksheetName
         $Worksheet.TabColor = $DetailColor
-        $Excel.Workbook.Worksheets.MoveAfter($Worksheet.Index, $WIndex++)
+        $Excel.Workbook.Worksheets.MoveAfter($Worksheet.Index, $WIndex)
+        [uint16]$WIndex = $Worksheet.Index
         $DetailRow = 1
         $DetailColumn = 1
 
