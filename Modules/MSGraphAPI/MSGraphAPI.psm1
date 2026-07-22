@@ -1486,6 +1486,7 @@ TargetWorkloadId : Microsoft.DirectoryServices
                         if ($ResultObjectCount -ge $Top) {
                             Write-Log -Message "[$InvocationName] Number of results has been reached, exiting." -Type Debug
                             $uri = ''
+                            $response = $null
                             return
                         }
                         elseif (($ResultObjectCount + $PageSize) -gt $Top) {
@@ -1499,6 +1500,7 @@ TargetWorkloadId : Microsoft.DirectoryServices
                     $i++
                 } while ("$uri".Trim() -ne '')
                 Write-Log -Message "[$InvocationName] Returning array with $ResultObjectCount items" -Type Debug
+                $response = $null
             }
             catch {
                 $ErrorMessage = $_.Exception.Message
@@ -1615,7 +1617,7 @@ TargetWorkloadId : Microsoft.DirectoryServices
                 # If retries not exceeded and error was potentially retryable (e.g., 429, other HTTP, non-HTTP), the loop will continue
             }
         } while ($RetryCount -le $MaxRetry)
-
+        $response = $null
         Write-Log -Message "[$InvocationName] Request failed after $($MaxRetry) retries. Aborting." -Type Error
         throw "Request failed after $($MaxRetry) retries. $httpErrorDesc" # Re-throw the exception after max retries
     }
@@ -2717,6 +2719,7 @@ The following warning will be logged:
                     $i++
                 } while ("$uri".Trim() -ne '')
                 Write-Log -Message "[$InvocationName] Returning array with $ResultObjectCount items" -Type Debug
+                $response = $null
             }
             catch {
                 if ($response.Content -match '"(error|code)":') {
@@ -2806,6 +2809,7 @@ The following warning will be logged:
             }
         } while ($RetryCount -le $MaxRetry)
 
+        $response = $null
         Write-Log -Message "[$InvocationName] Request failed after $($MaxRetry) retries. Aborting." -Type Error
         throw "Request failed after $($MaxRetry) retries. $httpErrorDesc" # Re-throw the exception after max retries
     }
