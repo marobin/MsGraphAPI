@@ -167,6 +167,60 @@ $Script:nonRetryableHttpStatusCodes = @{
 #endregion variables
 
 
+if ($null -eq (Get-Command -Name 'Write-Log' -EA Ignore)) {
+    function Write-Log {
+        [CmdletBinding()]
+        param (
+            [Parameter(Mandatory = $true, Position = 0)]
+            [String]$Message,
+
+            [Parameter(Position = 1)]
+            [ValidateSet('Debug', 'Info', 'Warning', 'Error')]
+            [String[]]$Type = 'Info',
+
+            [Alias('Path', 'FullName')]
+            [String]$LogFile,
+
+            [String]$Component = ' ',
+
+            [Switch]$CMTrace,
+
+            [Switch]$NoTimestamp,
+
+            [Switch]$DebugMode,
+
+            [Switch]$SplitLine,
+
+            [Switch]$PassThru
+        )
+
+        if (($null -ne $Global:Error[0])) {
+            $ErrorMessage = $Global:Error[0].Exception.Message
+            $Global:Error.Clear()
+            $Type = 'Error'
+        }
+
+        if (($Type.Count -eq 1) -and ($Type -eq 'Debug')) { $Type = 'Info' }
+
+        switch ($Type) {
+            'Info' {
+                Write-Verbose -Message $Message -Verbose
+            }
+            'Warning' {
+                Write-Warning -Message $Message
+            }
+            'Error' {
+                $EAPref = $ErrorActionPreference
+                $ErrorActionPreference = 'Continue'
+                Write-Error -Message "$Message. $ErrorMessage"
+                $Global:Error.RemoveAt(0)
+                $ErrorActionPreference = $EAPref
+            }
+        }
+    }
+}
+
+
 #region authentication
 function ConvertFrom-JWTToken {
     <#
@@ -1184,48 +1238,11 @@ TargetWorkloadId : Microsoft.DirectoryServices
         $RetryCount = 0
         $Headers = @{}
 
-        # Add a Write-Log function if a special one is not defined
-        if ($null -eq (Get-Command -Name 'Write-Log' -EA Ignore)) {
-            function Write-Log {
-                [CmdletBinding()]
-                param (
-                    [Parameter(Mandatory = $true, Position = 0)]
-                    [String]$Message,
-
-                    [Parameter(Position = 1)]
-                    [ValidateSet('Debug', 'Info', 'Warning', 'Error')]
-                    [String[]]$Type = 'Info'
-                )
-
-                if (($null -ne $Global:Error[0])) {
-                    $ErrorMessage = $Global:Error[0].Exception.Message
-                    $Global:Error.Clear()
-                    $Type = 'Error'
-                }
-
-                if (($Type.Count -eq 1) -and ($Type -eq 'Debug')) { $Type = 'Info' }
-
-                switch ($Type) {
-                    'Info' {
-                        Write-Verbose -Message $Message
-                    }
-                    'Warning' {
-                        Write-Warning -Message $Message
-                    }
-                    'Error' {
-                        Write-Error -Message "$Message. $ErrorMessage"
-                    }
-                }
-            }
-            if ($VerbosePreference -eq 'Continue') { $PSDefaultParameterValues['Write-Log:Verbose'] = $true }
+        if ($Global:PSDefaultParameterValues.Keys.Count -gt 0) {
+            $PSDefaultParameterValues = $Global:PSDefaultParameterValues.Clone()
         }
         else {
-            if ($Global:PSDefaultParameterValues.Keys.Count -gt 0) {
-                $PSDefaultParameterValues = $Global:PSDefaultParameterValues.Clone()
-            }
-            else {
-                $PSDefaultParameterValues.Clear()
-            }
+            $PSDefaultParameterValues.Clear()
         }
 
         # Build base URI
@@ -1870,47 +1887,12 @@ Execute 4 queries at the same time:
         #$JsonDepth = if ($PSVersionTable.PSVersion -ge [version]'6.0.0') { 10 } else { 2 }
         $ErrorActionPreference = 'Stop'
         $starttime = ([DateTime]::Now).ToString('yyyy-MM-dd HH:mm:ss')
-        if ($null -eq (Get-Command -Name 'Write-Log' -EA Ignore)) {
-            function Write-Log {
-                [CmdletBinding()]
-                param (
-                    [Parameter(Mandatory = $true, Position = 0)]
-                    [String]$Message,
 
-                    [Parameter(Position = 1)]
-                    [ValidateSet('Debug', 'Info', 'Warning', 'Error')]
-                    [String[]]$Type = 'Info'
-                )
-
-                if (($null -ne $Global:Error[0])) {
-                    $ErrorMessage = $Global:Error[0].Exception.Message
-                    $Global:Error.Clear()
-                    $Type = 'Error'
-                }
-
-                if (($Type.Count -eq 1) -and ($Type -eq 'Debug')) { $Type = 'Info' }
-
-                switch ($Type) {
-                    'Info' {
-                        Write-Verbose -Message $Message
-                    }
-                    'Warning' {
-                        Write-Warning -Message $Message
-                    }
-                    'Error' {
-                        Write-Error -Message "$Message. $ErrorMessage"
-                    }
-                }
-            }
-            if ($VerbosePreference -eq 'Continue') { $PSDefaultParameterValues['Write-Log:Verbose'] = $true }
+        if ($Global:PSDefaultParameterValues.Keys.Count -gt 0) {
+            $PSDefaultParameterValues = $Global:PSDefaultParameterValues.Clone()
         }
         else {
-            if ($Global:PSDefaultParameterValues.Keys.Count -gt 0) {
-                $PSDefaultParameterValues = $Global:PSDefaultParameterValues.Clone()
-            }
-            else {
-                $PSDefaultParameterValues.Clear()
-            }
+            $PSDefaultParameterValues.Clear()
         }
         try {
             $Retrycount = 0
