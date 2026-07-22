@@ -2635,17 +2635,26 @@ The following warning will be logged:
                         Write-Log -Message "[$InvocationName] $Method answer delivered" -Type Debug
                         return $response
                     }
+                    if ($null -ne $response.Content) {
+                        try {
+                            if ($response.Content -match '"value":') {
+                                $Content = ($response.Content | ConvertFrom-Json).value
+                            }
+                            else {
+                                $Content = $response.Content | ConvertFrom-Json
+                            }
+                        }
+                        catch [ArgumentException] {
+                            $Global:Error.RemoveAt(0)
+                            $Content = $response.Content
+                        }
+                    }
+                    else { $Content = $response }
+                    $ResultObjectCount += ($Content | Measure-Object).Count
                     switch ($OutputType) {
                         'PSObject' {
-                            if ($null -ne $response.Content) {
-                                if ($response.Content -match '"value":') {
-                                    ($response.Content | ConvertFrom-Json).value
-                                }
-                                else {
-                                    $response.Content | ConvertFrom-Json
-                                }
-                            }
-                            else { $response }
+                            $Content
+                            Remove-Variable -Name 'Content' -Force -EA Ignore
                             break
                         }
                         'HashTable' {
@@ -2666,17 +2675,6 @@ The following warning will be logged:
                             $response
                             break
                         }
-                    }
-                    if ($null -ne $response.Content) {
-                        if ($response.Content -match '"value":') {
-                            $ResultObjectCount += (($response.Content | ConvertFrom-Json).Value | Measure-Object).Count
-                        }
-                        else {
-                            $ResultObjectCount += ($response.Content | ConvertFrom-Json | Measure-Object).Count
-                        }
-                    }
-                    else {
-                        $ResultObjectCount += ($response | Measure-Object).Count
                     }
                     Write-Log -Message "[$InvocationName] Retrieved page $i, Now total: $ResultObjectCount items" -Type Debug
 
