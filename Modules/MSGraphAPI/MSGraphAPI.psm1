@@ -151,7 +151,7 @@ $Script:EnrollementIdSuffix = @(
 )
 
 # List of non retryable status code to be used in the retry loop
-$Script:nonRetryableGraphStatusCodes = @{
+$Script:nonRetryableHttpStatusCodes = @{
     '400' = 'BadRequest'
     '401' = 'Unauthorized'
     '403' = 'Forbidden / Access denied'
@@ -895,7 +895,7 @@ function Invoke-MgGraphRequestSingle {
     If advanced query is needed but the -Advanced parameter is omitted, the request will fail once and the advanced queries will automatically be enabled by the function.
     See https://learn.microsoft.com/en-us/graph/aad-advanced-queries to know more about advanced queries.
 
-    The function also handles the common http status codes returned by Invoke-MgGraphRequest (see $Script:nonRetryableGraphStatusCodes for the full list):
+    The function also handles the common http status codes returned by Invoke-MgGraphRequest (see $Script:nonRetryableHttpStatusCodes for the full list):
         400: Bad request. Will try to enable advanced queries if the error indicates that the query is unsupported and retry once, then exit if it still fails.
         403: Access denied
         404: Not found
@@ -1559,8 +1559,8 @@ TargetWorkloadId : Microsoft.DirectoryServices
                             # Re-throw to fail immediately (assuming Bad Request is not retryable)
                             throw $httpErrorDesc
                         }
-                        { "$_" -in $Script:nonRetryableGraphStatusCodes.Keys } {
-                            Write-Log -Message "[$InvocationName] $($Script:nonRetryableGraphStatusCodes["$StatusCode"]) ($StatusCode)." -Type Error
+                        { "$_" -in $Script:nonRetryableHttpStatusCodes.Keys } {
+                            Write-Log -Message "[$InvocationName] $($Script:nonRetryableHttpStatusCodes["$StatusCode"]) ($StatusCode)." -Type Error
                             # Re-throw to fail immediately
                             throw $httpErrorDesc
                         }
@@ -1623,7 +1623,7 @@ function Invoke-MgGraphRequestBatch {
     This function encapsulates Invoke-MgGraphRequest to process batches and offers multiple parameters to avoid having to build long queries in the uri parameter.
     Batching can be use to enhance the script performances.
 
-    It also handles the common http status codes returned by Invoke-MgGraphRequest (see $Script:nonRetryableGraphStatusCodes for the full list):
+    It also handles the common http status codes returned by Invoke-MgGraphRequest (see $Script:nonRetryableHttpStatusCodes for the full list):
         200 = Success
         201 = POST success
         204 = PATCH/DELETE success
@@ -2088,7 +2088,7 @@ Execute 4 queries at the same time:
                             $ResponseStatus = $response.Name
                             $ResponseItems = $response.group
                             $ResponseIdList = $ResponseItems.id -join ', '
-                            if ((($ResponseStatus -ge 100) -and ($ResponseStatus -lt 400)) -or ($ResponseStatus -in $Script:nonRetryableGraphStatusCodes.Keys)) {
+                            if ((($ResponseStatus -ge 100) -and ($ResponseStatus -lt 400)) -or ($ResponseStatus -in $Script:nonRetryableHttpStatusCodes.Keys)) {
                                 # Return response items in case of success or non retryable error
                                 $ResponseItems
                             }
@@ -2121,9 +2121,9 @@ Execute 4 queries at the same time:
                                         Write-Log -Message "[$InvocationName] (Status: $ResponseStatus) Throttling occurred for $($response.Count) objects: $ResponseIdList"
                                         break
                                     }
-                                    { "$_" -in $Script:nonRetryableGraphStatusCodes.Keys } {
+                                    { "$_" -in $Script:nonRetryableHttpStatusCodes.Keys } {
                                         if ($DoNotLogErrors.IsPresent -eq $false) {
-                                            Write-Log -Message "[$InvocationName] $($Script:nonRetryableGraphStatusCodes["$StatusCode"]) [$($ErrorCode)] for $($response.Count) objects: $ResponseIdList" -Type Error
+                                            Write-Log -Message "[$InvocationName] $($Script:nonRetryableHttpStatusCodes["$StatusCode"]) [$($ErrorCode)] for $($response.Count) objects: $ResponseIdList" -Type Error
                                             # Re-throw the original exception to signal failure to the caller
                                             throw
                                         }
@@ -2258,6 +2258,1165 @@ Execute 4 queries at the same time:
     }
 }
 #endregion Invoke-MgGraphRequest
+
+
+#region Invoke-AzureRequest
+function Invoke-AzureRequestSingle {
+    <#
+.SYNOPSIS
+    Invoke an Azure REST API request.
+
+.DESCRIPTION
+    Invoke an Azure REST API request.
+
+    This function encapsulates Invoke-AzRestMethod and offers multiple parameters to avoid having to build long queries in the uri parameter.
+    Paging is handled by following the nextLink property returned by the request.
+    Error handling allows for automatic retry when possible (throttling, 50x server errors, ...)
+    The function also handles the common http status codes returned by Invoke-AzRestMethod (see $Script:nonRetryableHttpStatusCodes for the full list):
+        400: Bad request
+        403: Access denied
+        404: Not found
+        429: throttling, will retry a number of $MaxRetry times before exiting with an error if unsuccessful
+
+    See https://learn.microsoft.com/en-us/rest/api/azure for more information
+    Throttling: https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/request-limits-and-throttling
+
+.PARAMETER Uri
+    Uniform Resource Identifier of the Azure resources.
+    The target resource needs to support Azure AD authentication and the access token is derived according to resource id.
+    If resource id is not set, its value is derived according to built-in service suffixes in current Azure Environment.
+
+.PARAMETER ResourceId
+    Identifier URI specified by the REST API you are calling. It shouldn't be the resource id of Azure Resource Manager
+
+.PARAMETER Path
+    Path of target resource URL. Hostname of Resource Manager should not be added.
+
+.PARAMETER APIVersion
+    Azure provider API version.
+
+.PARAMETER Method
+    API method: GET, POST, PATCH, PUT, DELETE, HEAD.
+
+.PARAMETER SubscriptionId
+    Target Subscription Id
+
+.PARAMETER ResourceGroupName
+    Target Resource Group Name
+
+.PARAMETER ResourceProviderName
+    Target Resource Provider Name
+    https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/azure-services-resource-providers
+
+.PARAMETER ResourceType
+    Target Resource Type
+
+.PARAMETER Name
+    List of Target Resource Name (URL segments coming after the resource type)
+
+.PARAMETER Filter
+    Azure REST API filters to apply.
+
+.PARAMETER Select
+    Azure REST API properties to include.
+
+.PARAMETER Body
+    Request body for PUT/POST/PATCH operations.
+
+.PARAMETER OrderBy
+    Property to be used for sorting the results.
+
+.PARAMETER PageSize
+    Page size (max 999 objects per page)
+
+.PARAMETER ThrottlingDelay
+    Delay between requests if throttled in milliseconds
+    Default is 1000.
+
+.PARAMETER MaxRetry
+    Maximum retry attempts for failed requests.
+    Default is 3.
+
+.PARAMETER OutputType
+    Type of object to be returned (PSObject,HashTable,Json,HttpResponseMessage).
+    Default is PSObject.
+
+.EXAMPLE
+List Automation Accounts in the resource group
+    PS C:\> $Params = @{
+        APIVersion           = '2024-10-23'
+        SubscriptionId       = $SubscriptionId
+        ResourceGroupName    = $ResourceGroupName
+        ResourceProviderName = 'Microsoft.Automation'
+        ResourceType         = 'automationAccounts'
+    }
+    PS C:\> Invoke-AzureRequestSingle @Params
+
+.EXAMPLE
+Get the content of the runbook named "Runbook1"
+    PS C:\> $Params = @{
+        APIVersion           = '2024-10-23'
+        SubscriptionId       = $SubscriptionId
+        ResourceGroupName    = $ResourceGroupName
+        ResourceProviderName = 'Microsoft.Automation'
+        ResourceType         = 'automationAccounts'
+    }
+    PS C:\> Invoke-AzureRequestSingle @Params -Name $AutomationAccountName,'runbooks','Runbook1','Content'
+
+.EXAMPLE
+List the failed jobs linked to the runbook named "Runbook1"
+    PS C:\> $Params = @{
+        APIVersion           = '2024-10-23'
+        SubscriptionId       = $SubscriptionId
+        ResourceGroupName    = $ResourceGroupName
+        ResourceProviderName = 'Microsoft.Automation'
+        ResourceType         = 'automationAccounts'
+    }
+    PS C:\> Invoke-AzureRequestSingle @Params -Name $AutomationAccountName,'Jobs' -Filter "properties/runbook/name eq 'Runbook1' and properties/status eq 'Failed'"
+
+.EXAMPLE
+List the subscription providers.
+This request should fail because '2024-10-23' is not a valid version.
+but the function fetches the list of approved versions for the current provider and automatically switch to the most recent one.
+
+    PS C:\> Invoke-AzureRequestSingle -Path ('subscriptions/{0}/providers?api-version={1}' -f $SubscriptionId, '2024-10-23')
+
+The following warning will be logged:
+    The api-version '2024-10-23' is invalid. The supported versions are '2026-06-01,2025-04-01,...'. Using the latest version [2026-06-01]
+
+.EXAMPLE
+
+
+.EXAMPLE
+
+
+.NOTES
+    AUTHOR: Marc-Antoine ROBIN
+    CREATION: 2026-07-15
+    VERSION: 1.0.0
+    MODIFICATIONS:
+
+    TODO:
+    - Handle PageSize and Top parameters
+    - Add the same capabilities as Invoke-AzRestMethod
+        Path (string) - Path of target resource URL. Hostname of Resource Manager should not be added.
+
+        Uri (uri) - Uniform Resource Identifier of the Azure resources. The target resource needs to support Azure AD authentication and the access token is derived according to resource id. If resource id is not set, its value is derived according to built-in service suffixes in current Azure Environment.
+        ResourceId (string) - Identifier URI specified by the REST API you are calling. It shouldn't be the resource id of Azure Resource Manager.
+
+        Method (String)
+        DefaultProfile (IAzureContextContainer) - The credentials, account, tenant, and subscription used for communication with Azure
+        NextLinkName (string) - Specifies the name of the next link JSON property to follow for pagination.
+        Paginate (switch) - Enables server-driven pagination from paginated GET endpoints.
+        PageableItemName (string) - Specifies the name of the JSON property that contains the items in a paginated response.
+        FinalResultFrom (string) - Specifies the header for final GET result after the long-running operation completes
+        PollFrom (string) - Specifies the polling header (to fetch from) for long-running operation status
+        AsJob (switch) - Run cmdlet in the background
+        WaitForCompletion (switch) - Waits for the long-running operation to complete before returning the result
+
+    - Add asynchronous operations handling: https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/async-operations
+
+.LINK
+    https://learn.microsoft.com/en-us/azure/governance/resource-graph/concepts/query-language
+    https://learn.microsoft.com/en-us/azure/governance/resource-graph/samples/starter?tabs=azure-cli
+    https://nicolas-yuen.medium.com/getting-started-with-azure-resource-graph-96f42cd0aa29
+    https://learn.microsoft.com/en-us/rest/api
+#>
+
+
+    [CmdletBinding(DefaultParameterSetName = 'Path')]
+    [Alias('azrs')]
+    param(
+        [Parameter(Position = 0, HelpMessage = "The HTTP method for the request(e.g., 'GET', 'PATCH', 'POST', 'PUT', 'DELETE', 'HEAD')", ParameterSetName = 'Detailed')]
+        [Parameter(Position = 0, HelpMessage = "The HTTP method for the request(e.g., 'GET', 'PATCH', 'POST', 'PUT', 'DELETE', 'HEAD')", ParameterSetName = 'Path')]
+        [Parameter(Position = 0, HelpMessage = "The HTTP method for the request(e.g., 'GET', 'PATCH', 'POST', 'PUT', 'DELETE', 'HEAD')", ParameterSetName = 'Uri')]
+        [ValidateSet('GET', 'PATCH', 'POST', 'PUT', 'DELETE', 'HEAD')]
+        [String]$Method = 'GET',
+
+        [Parameter(Position = 1, HelpMessage = 'Uniform Resource Identifier of the Azure resources. The target resource needs to support Azure AD authentication and the access token is derived according to resource id. If resource id is not set, its value is derived according to built-in service suffixes in current Azure Environment.', ParameterSetName = 'Uri')]
+        [uri]$Uri,
+
+        [Parameter(Position = 2, HelpMessage = "Identifier URI specified by the REST API you are calling. It shouldn't be the resource id of Azure Resource Manager", ParameterSetName = 'Uri')]
+        [string]$ResourceId,
+
+        [Parameter(Position = 1, HelpMessage = 'Path of target resource URL. Hostname of Resource Manager should not be added.', ParameterSetName = 'Path')]
+        [String]$Path,
+
+        [Parameter(Mandatory = $true, Position = 1, HelpMessage = 'The Azure REST API version', ParameterSetName = 'Detailed')]
+        [Alias('Version')]
+        [ValidateScript({ if ($_ -match '^\d{4}-\d{2}-\d{2}(-preview|-privatepreview)?$') { $true } else { throw "Failed to validate version [$_]" } })]
+        [string]$APIVersion,
+
+        [Parameter(Position = 2, HelpMessage = 'Target Subscription Id', ParameterSetName = 'Detailed')]
+        [string]$SubscriptionId,
+
+        [Parameter( Position = 3, HelpMessage = 'Target Resource Group Name', ParameterSetName = 'Detailed')]
+        [string]$ResourceGroupName,
+
+        [Parameter(Position = 4, HelpMessage = 'Target Resource Provider Name', ParameterSetName = 'Detailed')]
+        [string]$ResourceProviderName,
+
+        [Parameter(Position = 5, HelpMessage = 'Target Resource Type', ParameterSetName = 'Detailed')]
+        [string]$ResourceType,
+
+        [Parameter(Position = 6, HelpMessage = 'List of Target Resource Name', ParameterSetName = 'Detailed')]
+        [string[]]$Name,
+
+        [Parameter(Position = 7, HelpMessage = 'Request body for POST/PATCH operations', ParameterSetName = 'Detailed')]
+        [Alias('Payload', 'Content')]
+        $Body,
+
+        [Parameter(Position = 8, HelpMessage = 'Azure REST API filters to apply', ParameterSetName = 'Detailed')]
+        [Object]$Filter,
+
+        [Parameter(Position = 9, HelpMessage = 'Azure REST API properties to include', ParameterSetName = 'Detailed')]
+        [string[]]$Select,
+
+        [Parameter(Position = 10, HelpMessage = 'Sorting expression', ParameterSetName = 'Detailed')]
+        [string]$OrderBy,
+
+        [Parameter(Position = 11, HelpMessage = 'Page size (max 999 objects per page)', ParameterSetName = 'Detailed')]
+        [Parameter(Position = 3, HelpMessage = 'Page size (max 999 objects per page)', ParameterSetName = 'Uri')]
+        [Parameter(Position = 2, HelpMessage = 'Page size (max 999 objects per page)', ParameterSetName = 'Path')]
+        [ValidateRange(1, 999)]
+        [Alias('MaxPageSize')]
+        [uint16]$PageSize = 999,
+
+        [Parameter(Position = 12, HelpMessage = 'Delay between requests if throttled in milliseconds', ParameterSetName = 'Detailed')]
+        [Parameter(Position = 4, HelpMessage = 'Delay between requests if throttled in milliseconds', ParameterSetName = 'Uri')]
+        [Parameter(Position = 3, HelpMessage = 'Delay between requests if throttled in milliseconds', ParameterSetName = 'Path')]
+        [ValidateRange(100, 5000)]
+        [Alias('WaitTime')]
+        [uint16]$ThrottlingDelay = 1000,
+
+        [Parameter(Position = 13, HelpMessage = 'Maximum retry attempts for failed requests when throttled', ParameterSetName = 'Detailed')]
+        [Parameter(Position = 5, HelpMessage = 'Maximum retry attempts for failed requests when throttled', ParameterSetName = 'Uri')]
+        [Parameter(Position = 4, HelpMessage = 'Maximum retry attempts for failed requests when throttled', ParameterSetName = 'Path')]
+        [ValidateRange(1, 10)]
+        [uint16]$MaxRetry = 3,
+
+        [Parameter(Position = 14, ParameterSetName = 'Detailed')]
+        [Parameter(Position = 6, ParameterSetName = 'Uri')]
+        [Parameter(Position = 5, ParameterSetName = 'Path')]
+        [ValidateSet('PSObject', 'HashTable', 'Json', 'HttpResponseMessage')]
+        [ValidateSet('PSObject', 'HashTable', 'Json', 'HttpResponseMessage')]
+        [String]$OutputType = 'PSObject'
+    )
+
+    begin {
+        $InvocationName = $MyInvocation.MyCommand.Name
+        if ($null -eq (Get-AzAccessToken -EA Ignore)) {
+            throw "[$InvocationName] Authenticate first with Azure before using this function"
+        }
+        # Remove the global variables used to share the results' next link and count
+        Remove-Variable -Name '_AzRESTAPINextLink' -Force -EA Ignore -Scope Global -Verbose:$false
+        New-Variable -Name '_AzRESTAPINextLink' -Force -EA Ignore -Scope Global -Value '' -Verbose:$false
+        $ResultObjectCount = 0
+        $RetryCount = 0
+
+        if ($Global:PSDefaultParameterValues.Keys.Count -gt 0) {
+            $PSDefaultParameterValues = $Global:PSDefaultParameterValues.Clone()
+        }
+        else {
+            $PSDefaultParameterValues.Clear()
+        }
+
+        # Build base URI
+        $UriBuilder = [Text.StringBuilder]::new()
+        $queryParams = [System.Collections.Generic.List[String]]::new()
+        #$null = $UriBuilder.Append('https://management.azure.com')
+        switch ($PSCmdlet.ParameterSetName) {
+            'Detailed' {
+                #$Root = 'subscriptions/{0}/resourceGroups/{1}/providers/{2}/{3}/{4}' -f $SubscriptionId, $ResourceGroupName, $Provider, $ResourceType, $ResourceName
+                if ("$SubscriptionId".Trim() -ne '') { $null = $UriBuilder.Append(('/subscriptions/{0}' -f $SubscriptionId)) }
+                if ("$ResourceGroupName".Trim() -ne '') { $null = $UriBuilder.Append(('/resourceGroups/{0}' -f $ResourceGroupName)) }
+                if ("$ResourceProviderName".Trim() -ne '') { $null = $UriBuilder.Append(('/providers/{0}' -f $ResourceProviderName)) }
+                if ("$ResourceType".Trim() -ne '') { $null = $UriBuilder.Append(("/$ResourceType")) }
+                if ($Name.Count -gt 0) { $null = $UriBuilder.Append(("/$($Name -join '/')")) }
+                [String]$uri = "$($UriBuilder.ToString() -replace '\\+','\')".Trim('/')
+                break
+            }
+            'Path' {
+                [String]$uri = "$Path"
+                break
+            }
+            'Uri' {
+                [String]$uri = "$Uri" # TODO: Add $ResourceId to the uri
+                break
+            }
+        }
+
+        if ("$APIVersion" -ne '') {
+            $queryParams.Add("api-version=$APIVersion")
+        }
+        else {
+            [String]$APIVersion = $uri -replace '.+api-version=([\w-]+).*','$1'
+        }
+        #$UriBuilder.ToString()
+        # Add properties if specified
+        if ($Select.Count -gt 0) {
+            $queryParams.Add("`$select=$($Select -split ',' -replace ' ' -join ',')")
+        }
+
+        # Add filters if specified
+        if ($null -ne $PSBoundParameters['Filter']) {
+            $queryParams.Add("`$filter=$([System.Web.HttpUtility]::UrlEncode("$($Filter -replace "'+","'")"))")
+        }
+
+        # Order properties if specified
+        if ("$OrderBy".Trim() -ne '') {
+            $queryParams.Add("`$orderby=$OrderBy")
+        }
+
+        # Add page size parameter
+        <# if ($Method -eq 'GET') {
+            if (($Top -gt 0) -and ($Top -lt 999)) {
+                # Will exit the loop when the count of results is equal to $Top
+                $TopEnabled = $true
+                if ($Top -lt $PageSize) {
+                    # $Top takes precedence over $PageSize
+                    $PageSize = $Top
+                }
+            }
+            if ($PageSize -ne 999) { $queryParams.Add("`$top=$PageSize") }
+
+            if ($Skip -gt 0) {
+                $queryParams.Add("`$skip=$Skip")
+            }
+        } #>
+
+        # Combine query parameters into URI
+        if ($queryParams.Count -gt 0) {
+            $uri = "$uri`?$($queryParams -join '&')"
+        }
+        $null = $UriBuilder.Clear()
+        $queryParams.Clear()
+        Write-Verbose -Message "[$InvocationName] Query: $uri"
+        $JsonDepth = 10
+        #$JsonDepth = if ($PSVersionTable.PSVersion -ge [version]'6.0.0') { 10 } else { 2 }
+    }
+    process {
+        :RetryLoop do {
+            if ("$uri".Trim() -eq '') { return } # Exit the loop if the previous checks did not work
+            try {
+                Write-Log -Message "[$InvocationName] Making request to: $uri" -Type Debug
+                $i = 1
+                :UriLoop do {
+                    $response = $null
+                    if ($Method -eq 'GET') {
+                        Write-Log -Message "[$InvocationName] Requesting page $i with $PageSize items" -Type Debug
+                    }
+                    else {
+                        Write-Log -Message "[$InvocationName] Sending request with $Method method" -Type Debug
+                    }
+                    #Set default parameters for Invoke-AzRestMethod
+                    $params = @{
+                        Method      = $Method
+                        Path        = $uri
+                        ErrorAction = 'Stop'
+                        Verbose     = $false
+                    }
+                    # add additional parameters based on method
+                    if (($Method -in 'POST', 'PATCH', 'PUT') -and ($null -ne $Body)) {
+                        if (($null -ne $Body) -and ($Body.GetType().Name -notmatch 'String')) {
+                            $params.Payload = ($Body | ConvertTo-Json -Depth $JsonDepth)
+                        }
+                        else {
+                            $params.Payload = $Body
+                        }
+                        if ($body.count -lt 50) {
+                            Write-Log -Message "[$InvocationName] Request body: $($Body | ConvertTo-Json -Depth $JsonDepth)" -Type Debug
+                        }
+                        else {
+                            Write-Log -Message "[$InvocationName] Request body is too big to be shown ($($body.count))" -Type Debug
+                        }
+                        $body = $null
+                        [System.GC]::GetTotalMemory($true)
+                    }
+                    #send request to Azure REST API
+                    try {
+                        $response = Invoke-AzRestMethod @params #-MaxPageSize $PageSize
+                        $params.Clear()
+                        if (("$($response.StatusCode)" -notlike '20?') -or ($response.Content -match '"(error|code)":')) {
+                            throw $response.StatusCode
+                        }
+                        Write-Log -Message "[$InvocationName] Request successful" -Type Debug
+                    }
+                    catch {
+                        $params.Clear()
+                        throw "Request failed with error: $_"
+                    }
+                    # return the formated result
+                    if ($Method -in ('POST','PUT','PATCH') -and ($null -eq $response.Content)) {
+                        Write-Log -Message "[$InvocationName] $Method answer delivered" -Type Debug
+                        return $response
+                    }
+                    switch ($OutputType) {
+                        'PSObject' {
+                            if ($null -ne $response.Content) {
+                                if ($response.Content -match '"value":') {
+                                    ($response.Content | ConvertFrom-Json).value
+                                }
+                                else {
+                                    $response.Content | ConvertFrom-Json
+                                }
+                            }
+                            else { $response }
+                            break
+                        }
+                        'HashTable' {
+                            $ResultHash = @{}
+                            foreach ($Property in $response.PsObject.Properties.Name) {
+                                $ResultHash["$Property"] = $response.$Property
+                            }
+                            $ResultHash
+                            $ResultHash.Clear()
+                            break
+                        }
+                        'Json' {
+                            if ($null -ne $response.Content) { $response.Content }
+                            elseif ($null -ne $response) { $response | ConvertTo-Json -Depth $JsonDepth }
+                            break
+                        }
+                        'HttpResponseMessage' {
+                            $response
+                            break
+                        }
+                    }
+                    if ($null -ne $response.Content) {
+                        if ($response.Content -match '"value":') {
+                            $ResultObjectCount += (($response.Content | ConvertFrom-Json).Value | Measure-Object).Count
+                        }
+                        else {
+                            $ResultObjectCount += ($response.Content | ConvertFrom-Json | Measure-Object).Count
+                        }
+                    }
+                    else {
+                        $ResultObjectCount += ($response | Measure-Object).Count
+                    }
+                    Write-Log -Message "[$InvocationName] Retrieved page $i, Now total: $ResultObjectCount items" -Type Debug
+
+                    # Check for next page
+                    if (($response.PSObject.Properties.Name -contains 'nextLink') -and ("$($response.nextLink)".Trim() -ne '')) {
+                        if ("$Global:_AzRESTAPINextLink" -ne $response.nextLink) {
+                            $uri = $response.nextLink
+                            # Create a global variable to hold the nextlink
+                            Set-Variable -Name '_AzRESTAPINextLink' -Value $uri -Force -Scope Global -EA Ignore
+                            Write-Log -Message "[$InvocationName] Next page found: $uri" -Type Debug
+                        }
+                        else {
+                            # The previous nextLink is equal to the current one which indicates a paging loop
+                            $Global:_AzRESTAPINextLink = $uri = ''
+                            Write-Log -Message "[$InvocationName] Found a paging loop, exiting." -Type Warning
+                            $response = $null
+                            return
+                        }
+                    }
+                    else {
+                        Write-Log -Message "[$InvocationName] No more pages found" -Type Debug
+                        $uri = ''
+                        $response = $null
+                        return
+                    }
+
+                    <# if ($TopEnabled -eq $true) {
+                        if ($ResultObjectCount -ge $Top) {
+                            Write-Log -Message "[$InvocationName] Number of results has been reached, exiting." -Type Debug
+                            $uri = ''
+                            return
+                        }
+                        elseif (($ResultObjectCount + $PageSize) -gt $Top) {
+                            $NewPageSize = $Top - $ResultObjectCount
+                            $Uri = $Uri -replace "`$top=$PageSize", "`$top=$NewPageSize"
+                            Write-Log -Message "[$InvocationName] Changing the number of result from $PageSize to ${NewPageSize}: $uri" -Type Debug
+                            $PageSize = $NewPageSize
+                        }
+                    } #>
+                    $i++
+                } while ("$uri".Trim() -ne '')
+                Write-Log -Message "[$InvocationName] Returning array with $ResultObjectCount items" -Type Debug
+            }
+            catch {
+                if ($response.Content -match '"(error|code)":') {
+                    # Converting the json error part of the answer
+                    $httpErrorJson = $response.Content | ConvertFrom-Json
+                    if ($httpErrorJson.Error) { $httpErrorJson = $httpErrorJson.Error }
+                    $StatusCode = $response.StatusCode
+                }
+                else {
+                    $ErrorMessage = $_.Exception.Message
+                    $httpErrorJson = $null
+                    $StatusCode = $null
+                    if ($ErrorMessage -match 'Request failed with error: ') {
+                        $StatusCode = $ErrorMessage -replace 'Request failed with error: (\d+.*)','$1'
+                    }
+                }
+                # Exit the function if not authenticated
+                if ($ErrorMessage -match 'Authentication needed|User canceled authentication') { throw $ErrorMessage }
+                $Error.Clear()
+                Write-Log -Message "[$InvocationName] Request failed (Retry attempt $($RetryCount + 1)/$MaxRetry): $ErrorMessage" -Type Warning
+                if (($null -eq $StatusCode) -and ($ErrorMessage -match 'HTTP/[\d\.]+\s+(?<StatusCode>\d+)')) {
+                    # Parsing the error message to get the http status code (Ex: HTTP/1.1 400 ...)
+                    $StatusCode = $Matches['StatusCode']
+                }
+                $httpErrorDesc = "(ErrorCode $StatusCode) [$($httpErrorJson.code)] $($httpErrorJson.message)" -replace ' \[\]\s+$'
+                $RetryMessage = 'Waiting $Delay milliseconds before retrying. '
+                if ($RetryCount -eq $MaxRetry) {
+                    $RetryMessage = ''
+                }
+                if (($null -ne $response.Headers) -or ($StatusCode -gt 0)) {
+                    # Use switch to handle specific status codes
+                    switch ($StatusCode) {
+                        429 {
+                            # Throttling
+                            $RetryAfter = $response.Headers | Where-Object -Property Key -EQ 'Retry-After' | Select-Object -ExpandProperty Value
+                            if ($null -ne $RetryAfter) {
+                                $Delay = $RetryAfter * 1000
+                                Write-Log -Message "[$InvocationName] Throttling detected (429). $($ExecutionContext.InvokeCommand.ExpandString("$RetryMessage"))" -Type Warning
+                                Start-Sleep -Milliseconds ($RetryAfter * 1000) # Convert seconds to milliseconds
+                            }
+                            else {
+                                $Delay = [math]::Min(($ThrottlingDelay * ([math]::Pow(2, $RetryCount))), 60000) # Exponential backoff, max 60 seconds
+                                Write-Log -Message "[$InvocationName] Throttling detected (429). No Retry-After header found. $($ExecutionContext.InvokeCommand.ExpandString("$RetryMessage"))" -Type Warning
+                                Start-Sleep -Milliseconds $Delay
+                            }
+                            # Function break not needed, will fall through to retry logic below
+                            break
+                        }
+                        { "$_" -in $Script:nonRetryableHttpStatusCodes.Keys } {
+                            if (($StatusCode -eq 400) -and ($httpErrorJson.message -match 'The api-version .+ is invalid')) {
+                                $APIVersion = "$($httpErrorJson.message)".TrimEnd(".'") -replace ".+The supported versions are '" -split ',' | Select-Object -First 1
+                                $uri = "$uri" -replace 'api-version=[\w-]+',"api-version=$APIVersion"
+                                Write-Log -Message "[$InvocationName] $($httpErrorJson.message) Using the latest version [$APIVersion]" -Type Warning
+                            }
+                            else {
+                                Write-Log -Message "[$InvocationName] $($Script:nonRetryableHttpStatusCodes["$StatusCode"]) ($StatusCode)." -Type Error
+                                # Re-throw to fail immediately
+                                throw $httpErrorDesc
+                            }
+                        }
+                        default {
+                            # Other HTTP errors - Use generic retry
+                            $Delay = [math]::Min(($ThrottlingDelay * ([math]::Pow(2, $RetryCount))), 60000) # Exponential backoff, max 60 seconds
+                            Write-Log -Message "[$InvocationName] HTTP error $($StatusCode). $($ExecutionContext.InvokeCommand.ExpandString("$RetryMessage"))" -Type Warning
+                            Start-Sleep -Milliseconds $Delay
+                            # Function break not needed, will fall through to retry logic below
+                            break
+                        }
+                    }
+                }
+                else {
+                    # Non-HTTP errors (e.g., network issues, DNS resolution) - Use generic retry
+                    $Delay = [math]::Min(($ThrottlingDelay * ([math]::Pow(2, $RetryCount))), 60000) # Exponential backoff, max 60 seconds
+                    Write-Log -Message "[$InvocationName] Non-HTTP error. $($ExecutionContext.InvokeCommand.ExpandString("$RetryMessage")) Error: $ErrorMessage" -Type Warning
+                    Start-Sleep -Milliseconds $Delay
+                    # Fall through to retry logic below
+                }
+
+                # Increment retry count and check if max retries exceeded ONLY if not already thrown
+                $RetryCount++
+                if ($RetryCount -ge $MaxRetry) {
+                    Write-Log -Message "[$InvocationName] Request failed after $($MaxRetry) retries. Aborting." -Type Error
+                    # Throw a specific message or re-throw the last caught error
+                    throw "Request failed after $($MaxRetry) retries. Last error: $ErrorMessage"
+                }
+                # If retries not exceeded and error was potentially retryable (e.g., 429, other HTTP, non-HTTP), the loop will continue
+            }
+        } while ($RetryCount -le $MaxRetry)
+
+        Write-Log -Message "[$InvocationName] Request failed after $($MaxRetry) retries. Aborting." -Type Error
+        throw "Request failed after $($MaxRetry) retries. $httpErrorDesc" # Re-throw the exception after max retries
+    }
+    end {
+        # End function and report memory usage
+        $MemoryUsage = [Math]::Round(([System.GC]::GetTotalMemory($false) / 1MB), 2)
+        $NewMemoryUsage = [Math]::Round(([System.GC]::GetTotalMemory('forcefullcollection') / 1MB), 2)
+        Write-Log -Message "[$InvocationName] Function finished. Memory usage: $MemoryUsage MB (After collection: $NewMemoryUsage MB)" -Type Debug
+    }
+}
+
+
+function Invoke-AzureRequestBatch {
+    <#
+.SYNOPSIS
+    Invoke a Azure REST API request as a batch.
+
+.DESCRIPTION
+    Invoke a Azure REST API request as a batch.
+
+    This function encapsulates Invoke-AzRestMethod to process batches and offers multiple parameters to avoid having to build long queries in the uri parameter.
+    Batching can be use to enhance the script performances.
+
+    It also handles the common http status codes returned by Invoke-AzRestMethod (see $Script:nonRetryableHttpStatusCodes for the full list):
+        200 = Success
+        201 = POST success
+        204 = PATCH/DELETE success
+        400 = Bad request
+        403 = Access denied
+        404 = Resource not found
+        429 = Throttling, will retry a number of times before exiting with an error if unsuccessful
+        100 - 199 = Informal
+        200 - 299 = Success
+        300 - 399 = Redirection
+        400 - 499 = Errors, will retry a number of times before exiting with an error if unsuccessful
+        500 - 599 = Server errors, will retry a number of times before exiting with an error if unsuccessful
+
+    There are 2 ways of batching requests using this function:
+        - All requests point to the same resource => Use the ObjectList containing a list of objects that are either ids or objects with an id property (See EXAMPLE 1)
+        - Different resources are queried => Use the HashTable parameter, and the APIVersion (See EXAMPLE 2)
+
+    The function will return a list of objects with the following properties:
+        - name = identificator of the request.
+            Its value depends on the parameter used (hashtable, objectlist).
+                Hashtable => the id is the same as the id provided in the hashtable, it'll otherwise be a number representing the order in which the request was made.
+                ObjectList => the id is the same as the object's id.
+        - httpStatusCode = http code returned by the request (2xx, 4xx)
+        - headers = header returned by the request (OData-Version and Content-Type)
+        - content = body of the answer.
+            Has a value property representing the object returned by the request (empty if no answer was returned)
+        - contentLength = Length of the content represented as a json string
+
+.PARAMETER BatchAPIVersion
+    Microsoft Azure REST API version for the batch service (Default is 2020-06-01)
+
+.PARAMETER APIVersion
+    Microsoft Azure REST API version
+
+.PARAMETER Method
+    API method: GET, POST, PATCH, PUT, DELETE, HEAD.
+
+.PARAMETER Hashtable
+    List of requests formated as hashtables with the following properties:
+        - (Optinal) name = identificator for the request, can be a string, a guid, or a number
+        - httpMethod = Same as the Method parameter
+        - url = url of the request (resource, filters, select, count, ...)
+        - (Optional) content = body if the request uses the POST, PATCH, or PUT method
+
+    This can be used when batching multiple queries that are using different resources.
+
+.PARAMETER Path
+    Path of target resource URL. Hostname of Resource Manager should not be added.
+
+.PARAMETER Filter
+    Azure REST API filters to apply.
+
+.PARAMETER Select
+    Azure REST API properties to include.
+
+.PARAMETER Body
+    Request body for POST/PATCH/PUT operations.
+
+.PARAMETER ObjectList
+    Array of objects to process in batches.
+
+.PARAMETER IdProperty
+    Input object property to be used as the request id.
+    That property name is also to be used in the Path uri prefixed with a $.
+    That string will be replaced by each object's id.
+
+.PARAMETER BatchSize
+    Batch size (max 20 objects per batch).
+    Default is 20.
+
+.PARAMETER WaitTime
+    Delay between batches in milliseconds.
+    Default is 100.
+
+.PARAMETER MaxRetry
+    Maximum retry attempts for failed requests.
+    Default is 3.
+
+.PARAMETER DoNotLogErrors
+    Requests failing with status 4xx will not be logged.
+
+.EXAMPLE
+List the packages of each runtime environment in the Automation Account
+
+    PS C:\> $Params = @{
+        APIVersion           = '2024-10-23'
+        SubscriptionId       = $SubscriptionId
+        ResourceGroupName    = $ResourceGroupName
+        ResourceProviderName = 'Microsoft.Automation'
+        ResourceType         = 'automationAccounts'
+    }
+
+Retrieve the runtime environments for the specified Automation Account
+    PS C:\> $RuntimeList = Invoke-AzureRequestSingle @Params -Name $AutomationAccountName,'runtimeEnvironments'
+
+Build the query. Notice the "$name" string (Same as -IdProperty) that will be replaced with the actual value in the batched queries
+    PS C:\> $Path = 'subscriptions/{0}/resourceGroups/{1}/providers/{2}/{3}/{4}/runtimeEnvironments/$name/packages' -f $Params.SubscriptionId,$params.ResourceGroupName, $params.ResourceProviderName, $params.ResourceType,$AutomationAccountName
+
+Send the batch request by passing the $RuntimeList variable where each object as a 'name' property which will be used to identify each query
+    PS C:\> Invoke-AzureRequestBatch -APIVersion '2024-10-23' -Path $Path -ObjectList $RuntimeList -IdProperty 'name'
+
+.EXAMPLE
+List the runbooks and modules for PowerShell 5.1 in the Automation Account
+
+    PS C:\> $APIVersion = '2024-10-23'
+    PS C:\> $RootPath = 'subscriptions/{0}/resourceGroups/{1}/providers/Microsoft.Automation/automationAccounts/{2}' -f $SubscriptionId, $ResourceGroupName, $AutomationAccountName
+    PS C:\> $HashTable = @(
+        @{
+            name = 'Runbooks'
+            httpMethod = 'GET'
+            url = '{0}/runbooks?api-version={1}' -f $RootPath, $APIVersion
+        },
+        @{
+            name = 'PS5_Modules'
+            httpMethod = 'GET'
+            url = '{0}/runtimeEnvironments/PowerShell-5.1/packages?api-version={1}' -f $RootPath, $APIVersion
+        },
+        @{
+            name = 'GalleryLookup'
+            httpMethod = 'POST'
+            url = '{0}/galleryModuleItems?api-version={1}' -f $RootPath, $APIVersion
+            content = @{
+                pageLink = ''
+                filter   = "ImportExcel"
+                orderBy  = '1' # 0=Last updated, 1=Popularity
+            }
+        }
+    )
+    PS C:\> Invoke-AzureRequestBatch -HashTable $HashTable
+
+
+.NOTES
+    AUTHOR: Marc-Antoine ROBIN
+    CREATION: 2026-07-15
+    VERSION: 1.0.0
+    MODIFICATIONS:
+
+    TODO:
+        - Batch size can be greater than 20 requests but a status code 202 (Accepted) is returned and the response header includes Retry-After and Location.
+          Location can be used to poll the results after the Retry-After delay (in seconds)
+        - Handle NextLink response (more than 100 requests)
+
+.LINK
+https://maciejporebski.github.io/azure-management-batch-api
+https://nsftwr.com/posts/azure-batch-api/
+
+#>
+
+
+    [CmdletBinding(DefaultParameterSetName = 'SingleResource')]
+    [Alias('azrb')]
+    param(
+        [Parameter(Position = 0, HelpMessage = 'The Azure REST API version', ParameterSetName = 'SingleResource')]
+        [Parameter(Position = 0, HelpMessage = 'The Azure REST API version', ParameterSetName = 'Hashtable')]
+        [ValidateScript({ if ($_ -match '^\d{4}-\d{2}-\d{2}(-preview|-privatepreview)?$') { $true } else { throw "Failed to validate version [$_]" } })]
+        [string]$BatchAPIVersion = '2020-06-01',
+
+        [Parameter(Mandatory = $true, Position = 1, HelpMessage = 'The Azure REST API version', ParameterSetName = 'SingleResource')]
+        [Alias('Version')]
+        [ValidateScript({ if ($_ -match '^\d{4}-\d{2}-\d{2}(-preview|-privatepreview)?$') { $true } else { throw "Failed to validate version [$_]" } })]
+        [string]$APIVersion,
+
+        [Parameter(Mandatory = $true, Position = 1, HelpMessage = 'List of requests in the hashtable format including httpMethod,url[,name,content]', ParameterSetName = 'Hashtable')]
+        [Hashtable[]]$Hashtable,
+
+        [Parameter(Position = 1, HelpMessage = "The HTTP method for the request(e.g., 'GET', 'PATCH', 'POST', 'PUT', 'DELETE', 'HEAD')", ParameterSetName = 'SingleResource')]
+        [ValidateSet('GET', 'PATCH', 'POST', 'PUT', 'DELETE', 'HEAD')]
+        [String]$Method = 'GET',
+
+        [Parameter(Position = 3, HelpMessage = 'Azure REST API filters to apply', ParameterSetName = 'SingleResource')]
+        [Object]$Path,
+
+        [Parameter(Position = 3, HelpMessage = 'Azure REST API filters to apply', ParameterSetName = 'SingleResource')]
+        [Object]$Filter,
+
+        [Parameter(Position = 4, HelpMessage = 'Azure REST API properties to include', ParameterSetName = 'SingleResource')]
+        [string[]]$Select,
+
+        [Parameter(Position = 5, HelpMessage = 'Request body for POST/PATCH operations', ParameterSetName = 'SingleResource')]
+        [Alias('Payload','Content')]
+        $Body,
+
+        [Parameter(Position = 6, Mandatory = $true, HelpMessage = 'Array of objects to process in batches', ParameterSetName = 'SingleResource')]
+        [System.Object[]]$ObjectList,
+
+        [Parameter(Mandatory = $true, Position = 7, HelpMessage = 'The property used as a unique id in the query', ParameterSetName = 'SingleResource')]
+        [string]$IdProperty,
+
+        [Parameter(Position = 9, HelpMessage = 'Batch size (max 20 objects per batch)', ParameterSetName = 'SingleResource')]
+        [Parameter(Position = 9, HelpMessage = 'Batch size (max 20 objects per batch)', ParameterSetName = 'Hashtable')]
+        [ValidateRange(1, 20)]
+        [int]$BatchSize = 20,
+
+        [Parameter(Position = 10, HelpMessage = 'Delay between batches in milliseconds', ParameterSetName = 'SingleResource')]
+        [Parameter(Position = 10, HelpMessage = 'Delay between batches in milliseconds', ParameterSetName = 'Hashtable')]
+        [ValidateRange(1, 5000)]
+        [int]$WaitTime = 1,
+
+        [Parameter(Position = 11, HelpMessage = 'Maximum retry attempts for failed requests', ParameterSetName = 'SingleResource')]
+        [Parameter(Position = 11, HelpMessage = 'Maximum retry attempts for failed requests', ParameterSetName = 'Hashtable')]
+        [ValidateRange(1, 10)]
+        [int]$MaxRetry = 3,
+
+        [Parameter(ParameterSetName = 'SingleResource')]
+        [Parameter(ParameterSetName = 'Hashtable')]
+        [Switch]$DoNotLogErrors
+    )
+
+    begin {
+        $InvocationName = $MyInvocation.MyCommand.Name
+        if ($null -eq (Get-AzAccessToken -EA Ignore)) {
+            throw "[$InvocationName] Authenticate first with Azure before using this function"
+        }
+        $IsSystem = [System.Security.Principal.WindowsIdentity]::GetCurrent().IsSystem
+        $JsonDepth = 10
+        #$JsonDepth = if ($PSVersionTable.PSVersion -ge [version]'6.0.0') { 10 } else { 2 }
+        $ErrorActionPreference = 'Stop'
+        $starttime = [DateTime]::Now
+
+        if ($Global:PSDefaultParameterValues.Keys.Count -gt 0) {
+            $PSDefaultParameterValues = $Global:PSDefaultParameterValues.Clone()
+        }
+        else {
+            $PSDefaultParameterValues.Clear()
+        }
+
+        try {
+            $Retrycount = 0
+            $CollectedObjectsCount = 0
+            $RetryObjects = [System.Collections.Generic.List[PSCustomObject]]::new()
+
+            # Check execution context
+            if ($env:AUTOMATION_ASSET_ACCOUNTID) {
+                [Bool]$ManagedIdentity = $true
+                Write-Log -Message ('[{0}] Running in Azure Automation context' -f $InvocationName) -Type Debug
+            }
+            else {
+                [Bool]$ManagedIdentity = $false
+                Write-Log -Message ('[{0}] Running in Local PowerShell context' -f $InvocationName) -Type Debug
+            }
+        }
+        catch {
+            Write-Log -Message ('[{0}] Failed to initialize with error' -f $InvocationName) -Type Error
+            throw
+        }
+    }
+
+    process {
+        try {
+            $BreakRetryLoop = $false
+            :RetryLoop do {
+                try {
+                    switch ($PSCmdlet.ParameterSetName) {
+                        'Hashtable' {
+                            $TotalObjects = ($Hashtable | Measure-Object).Count
+                        }
+                        'SingleResource' {
+                            $TotalObjects = ($ObjectList | Measure-Object).Count
+                        }
+                    }
+
+                    if ($TotalObjects -eq 0) {
+                        Write-Log -Message "[$InvocationName] Cannot process an empty request" -Type Warning
+                        break RetryLoop
+                    }
+                    Write-Log -Message "[$InvocationName] Start processing with $TotalObjects objects" -Type Debug
+                    $currentObject = 0
+                    # Clear RetryObjects at the beginning of each retry loop
+                    $RetryObjects.Clear()
+
+                    Write-Log -Message "[$InvocationName] Processing started with $TotalObjects objects" -Type Debug
+                    # Start looping all objects and run batches
+                    $Index = 0
+                    for ($i = 0; $i -lt $TotalObjects; $i += $BatchSize) {
+                        try {
+                            # Create Requests of id, method and url
+                            $batchStart = $i
+                            $batchEnd = [Math]::Min($i + $BatchSize - 1, $TotalObjects - 1)
+                            $BatchRequestList = $(
+                                switch ($PSCmdlet.ParameterSetName) {
+                                    'Hashtable' {
+                                        $batchObjects = $Hashtable[$batchStart..$batchEnd]
+                                        foreach ($Item in $batchObjects) {
+                                            # The hashtable must have at least a method and an url property
+                                            [String]$Method = ($Item.Method,$Item.httpMethod).Where({ $_ -in ('GET', 'PATCH', 'POST', 'PUT', 'DELETE', 'HEAD') }) | Select-Object -First 1
+                                            $Body = ($Item.body,$Item.content,$item.Payload).Where({ "$_".Trim() -ne '' }) | Select-Object -First 1
+                                            if (("$Method" -eq '') -or ($null -eq $Item.url)) {
+                                                Write-Log -Message "[$InvocationName] Item is missing a parameter: $($Item | ConvertTo-Json -Compress)" -Type Warning
+                                                continue
+                                            }
+                                            # Use the id property provided in the hashtable or an index
+                                            if ($null -ne $Item.name) { $ItemId = $Item.name }
+                                            else { $ItemId = $Index++ }
+
+                                            # Build the request hashtable for the item
+                                            $Req = @{
+                                                name       = "$ItemId"
+                                                httpMethod = "$Method".ToUpper() # The method needs to be in capital letters
+                                                url        = "/$($Item.url)"
+                                                content    = $Body
+                                            }
+                                            $Req
+                                        }
+                                        break
+                                    }
+                                    'SingleResource' {
+                                        $batchObjects = $ObjectList[$batchStart..$batchEnd]
+                                        foreach ($Item in $batchObjects) {
+                                            [String]$ItemId = $Item.$IdProperty
+                                            if (("$ItemId" -eq '') -and ($null -ne $Item)) {
+                                                [String]$ItemId = $Item
+                                            }
+
+                                            # Build URL with properties and filters
+                                            $url = "/$Path" -replace '/+', '/'
+
+                                            # Add properties if specified
+                                            [String[]]$urlParams = $(
+                                                "api-version=$APIVersion"
+                                                if ($Select.Count -gt 0) {
+                                                    "`$select=$($Select -join ',')"
+                                                }
+
+                                                # Add filters if specified
+                                                if ($null -ne $PSBoundParameters['Filter']) {
+                                                    "`$filter=$([System.Web.HttpUtility]::UrlEncode("$($Filter -replace "'+","'")"))"
+                                                }
+                                            )
+
+                                            # Combine URL parameters
+                                            if ($urlParams.Count -gt 0) {
+                                                $url = '{0}?{1}' -f $url, ($urlParams -join '&')
+                                            }
+
+                                            $req = @{
+                                                name       = "$ItemId"
+                                                httpMethod = "$Method".ToUpper() # The method needs to be in capital letters
+                                                url        = "$url" -replace "\`$$IdProperty\b",$ItemId
+                                            }
+                                            if ($Method -in ('PATCH', 'POST', 'PUT')) {
+                                                $req.content = $Body
+                                            }
+                                            $Req
+                                        }
+                                        break
+                                    }
+                                }
+                            )
+                            Write-Log -Message "[$InvocationName] Created batch for items $($i) to $([Math]::Min($i + $BatchSize, $TotalObjects)) of $TotalObjects total items" -Type Debug
+                        }
+                        catch {
+                            Write-Log -Message ('[{0}] Failed to create batch with error' -f $InvocationName) -Type Error
+                            throw $_
+                        }
+
+                        # Send the requests in a batch
+                        try {
+                            $Params = @{
+                                Method  = 'POST'
+                                Uri     = 'https://management.azure.com/batch?api-version={0}' -f $BatchAPIVersion
+                                Payload = @{ 'requests' = @($BatchRequestList) } | ConvertTo-Json -Depth $JsonDepth
+                                Verbose = $false
+                            }
+                            $responses = Invoke-AzRestMethod @Params
+                            if ($responses.StatusCode -notlike '20?') {
+                                throw "Status code is $($responses.StatusCode)"
+                            }
+                            Write-Log -Message ('[{0}] Successfully sent the request' -f $InvocationName) -Type Debug
+                        }
+                        catch {
+                            if ($response.Content -match '"(error|code)":') {
+                                # Converting the json error part of the answer
+                                $httpErrorJson = $responses.Content | ConvertFrom-Json
+                                if ($httpErrorJson.Error) { $httpErrorJson = $httpErrorJson.Error }
+                                $StatusCode = $responses.StatusCode
+                                $ErrorMessage = $httpErrorJson.message
+                            }
+                            else {
+                                $ErrorMessage = $_.Exception.Message
+                                $httpErrorJson = $null
+                                $StatusCode = $null
+                                if ($ErrorMessage -match 'Request failed with error: ') {
+                                    $StatusCode = $ErrorMessage -replace 'Request failed with error: (\d+.*)'
+                                }
+                            }
+                            Write-Log -Message ('[{0}] Failed to send batch request with error: {1}' -f $InvocationName, $ErrorMessage) -Type Error
+                            if (("$ErrorMessage" -match 'Authentication') -or ($httpErrorJson.code -match 'Authentication')) { throw "$ErrorMessage" }
+                            throw $_
+                        }
+
+                        # Process the responses and verify status
+                        $ResponseStatusList = ($responses.Content | ConvertFrom-Json).responses | Group-Object -Property httpStatusCode
+                        $responses = $null # Memory management
+                        $ThrottlingDetected = ($ResponseStatusList.Name -contains 429) -eq $true
+                        foreach ($response in $ResponseStatusList) {
+                            $CurrentObject += $response.Count
+                            $ResponseStatus = $response.Name
+                            $ResponseItems = $response.group
+                            $ResponseIdList = $ResponseItems.name -join ', '
+                            if ((($ResponseStatus -ge 100) -and ($ResponseStatus -lt 400)) -or ($ResponseStatus -in $Script:nonRetryableHttpStatusCodes.Keys)) {
+                                # Return response items in case of success or non retryable error
+                                $ResponseItems
+                            }
+                            $ErrorCode = ''
+                            if (($ResponseStatus -ge 400) -and ($ResponseStatus -lt 600)) {
+                                [String]$ErrorCode = "(Status: $ResponseStatus) [$($responseitems.content.error | Select-Object -Property Code,Message -Unique | ConvertTo-Json -Compress)]" -replace ' \[\]\s+$'
+                            }
+                            try {
+                                switch ($ResponseStatus) {
+                                    200 {
+                                        # GET success
+                                        $CollectedObjectsCount += $response.Count
+                                        Write-Log -Message "[$InvocationName] Successfully processed GET for $($response.Count) objects: $ResponseIdList" -Type Debug
+                                        break
+                                    }
+                                    201 {
+                                        # POST success
+                                        $CollectedObjectsCount += $response.Count
+                                        Write-Log -Message "[$InvocationName] Successfully processed POST for $($response.Count) objects: $ResponseIdList" -Type Debug
+                                        break
+                                    }
+                                    204 {
+                                        # PATCH/DELETE success
+                                        $CollectedObjectsCount += $response.Count
+                                        Write-Log -Message "[$InvocationName] Successfully processed $Method for $($response.Count) objects: $ResponseIdList" -Type Debug
+                                        break
+                                    }
+                                    429 {
+                                        $ResponseItems | ForEach-Object { $null = $RetryObjects.Add($_) }
+                                        Write-Log -Message "[$InvocationName] (Status: $ResponseStatus) Throttling occurred for $($response.Count) objects: $ResponseIdList"
+                                        break
+                                    }
+                                    { "$_" -in $Script:nonRetryableHttpStatusCodes.Keys } {
+                                        if ($DoNotLogErrors.IsPresent -eq $false) {
+                                            Write-Log -Message "[$InvocationName] $($Script:nonRetryableHttpStatusCodes["$StatusCode"]) [$($ErrorCode)] for $($response.Count) objects: $ResponseIdList" -Type Error
+                                            # Re-throw the original exception to signal failure to the caller
+                                            throw
+                                        }
+                                        break
+                                    }
+                                    { $_ -ge 100 -and $_ -lt 200 } {
+                                        # Informal
+                                        Write-Log -Message "[$InvocationName] (Status: $ResponseStatus) Unexpected informal code for $($response.Count) objects: $ResponseIdList"
+                                        break
+                                    }
+                                    { $_ -ge 200 -and $_ -lt 300 } {
+                                        # Success
+                                        Write-Log -Message "[$InvocationName] (Status: $ResponseStatus) Unexpected success code for $($response.Count) objects: $ResponseIdList"
+                                        break
+                                    }
+                                    { $_ -ge 300 -and $_ -lt 400 } {
+                                        # Redirection
+                                        Write-Log -Message "[$InvocationName] (Status: $ResponseStatus) Unexpected redirection code for $($response.Count) objects: $ResponseIdList" -Type Warning
+                                        break
+                                    }
+                                    { $_ -ge 400 -and $_ -lt 500 } {
+                                        # Errors
+                                        $ResponseItems | ForEach-Object { $null = $RetryObjects.Add($_) }
+                                        Write-Log -Message "[$InvocationName] (Status: $ResponseStatus) Unexpected error code [$ErrorCode] for $($response.Count) objects: $ResponseIdList" -Type Error
+                                        break
+                                    }
+                                    { $_ -ge 500 -and $_ -lt 600 } {
+                                        # Server error
+                                        $ResponseItems | ForEach-Object { $null = $RetryObjects.Add($_) }
+                                        Write-Log -Message "[$InvocationName] (Status: $ResponseStatus) Unexpected server error [$ErrorCode] for $($response.Count) objects: $ResponseIdList" -Type Error
+                                        break
+                                    }
+                                }
+                            }
+                            catch {
+                                Write-Log -Message ('[{0}] Failed to process response' -f $InvocationName) -Type Error
+                                continue
+                            }
+                        }
+                        $ResponseStatusList = $null # Memory management
+                        # Handle throttling and progress
+                        try {
+                            # Show progress if not running in automation
+                            if (($ManagedIdentity -eq $false) -and ($IsSystem -eq $false)) {
+                                # Calculate progress and time estimates
+                                $ElapsedTime = New-TimeSpan -Start $starttime -End (Get-Date)
+                                $timeLeft = $(
+                                    if ($CurrentObject -gt 0) {
+                                        [TimeSpan]::FromMilliseconds(($ElapsedTime.TotalMilliseconds / $CurrentObject) * ($TotalObjects - $CurrentObject)) # time per object * remaining objects
+                                    }
+                                    else {
+                                        [TimeSpan]::Zero
+                                    }
+                                )
+                                $WPParams = @{
+                                    Activity        = "$($MyInvocation.MyCommand.Name) processing requests"
+                                    Status          = '{0}/{1} | Est. Time: {2:hh}:{2:mm}:{2:ss} | Throttled: {3} | Retry: {4}/{5}' -f $CurrentObject, $TotalObjects, $timeLeft, $RetryObjects.Count, $Retrycount, $MaxRetry
+                                    PercentComplete = ([math]::ceiling(($CurrentObject / $TotalObjects) * 100))
+                                    #SecondsRemaining = [int]$timeLeft.TotalSeconds
+                                }
+                                Write-Progress @WPParams
+                            }
+
+                            # Handle throttling with exponential backoff
+                            $throttledResponses = $RetryObjects | Where-Object -Property status -EQ 429
+                            if (($ThrottlingDetected -eq $true) -and ($throttledResponses | Measure-Object).Count -gt 0) {
+                                [uint32]$recommendedWait = ($throttledResponses.headers | Where-Object -Property Key -EQ 'Retry-After' | Select-Object -ExpandProperty Value | Measure-Object -Maximum).Maximum
+                                if ($recommendedWait -eq 0) { $recommendedWait = 2 }
+                                $backoffWait = [math]::Min($recommendedWait + ($Retrycount * 2), 30) # Max 30 second wait
+                                Write-Log -Message "[$InvocationName] Throttling detected, waiting $backoffWait seconds (Recommended [$recommendedWait] | Retry [$Retrycount])" -Type Warning
+                                Start-Sleep -Seconds $backoffWait
+                            }
+                            else {
+                                # Wait the specified amount of time between batches
+                                Start-Sleep -Milliseconds $WaitTime
+                            }
+                        }
+                        catch {
+                            Write-Log -Message ('[{0}] Batch failed to handle throttling' -f $InvocationName) -Type Error
+                            throw
+                        }
+                    }
+
+                    # Handle retries
+                    if (($RetryObjects.Count -gt 0) -and ($MaxRetry -gt 0)) {
+                        $Retrycount++
+                        if ($MaxRetry -eq 1) { $BreakRetryLoop = $true }
+                        else { $MaxRetry-- }
+                        Write-Log -Message "[$InvocationName] Starting retry $Retrycount with $($RetryObjects.Count) objects"
+                        # The objects to retry are the ones that had errors
+                        switch ($PSCmdlet.ParameterSetName) {
+                            'Hashtable' {
+                                $TotalObjects = ($Hashtable | Measure-Object).Count
+                                $ClonedHashTable = $Hashtable.Clone()
+                                [Hashtable[]]$Hashtable = $RetryObjects | ForEach-Object { $ClonedHashTable | Where-Object -Property name -EQ $_.name }
+                            }
+                            'SingleResource' {
+                                $ObjectList = $RetryObjects | ForEach-Object { $ObjectList | Where-Object -Property name -EQ $_.name }
+                            }
+                        }
+                    }
+                }
+                catch {
+                    Write-Log -Message ('[{0}] Failed in retry loop' -f $InvocationName) -Type Error
+                    throw
+                }
+            } while (($RetryObjects.Count -gt 0) -and ($MaxRetry -gt 0) -and ($BreakRetryLoop -eq $false))
+
+            if ($TotalObjects -gt 0) {
+                Write-Log -Message "[$InvocationName] Successfully processed $CollectedObjectsCount objects" -Type Debug
+            }
+        }
+        catch {
+            Write-Log -Message ('[{0}] Function failed in main process block with error' -f $InvocationName) -Type Error
+            throw $_
+        }
+    }
+    end {
+        if (($ManagedIdentity -eq $false) -and ($IsSystem -eq $false)) {
+            Write-Progress -Activity $WPParams.Activity -Completed -PercentComplete 100 -EA Ignore
+        }
+        # End function and report memory usage
+        $MemoryUsage = [Math]::Round(([System.GC]::GetTotalMemory($false) / 1MB), 2)
+        $NewMemoryUsage = [Math]::Round(([System.GC]::GetTotalMemory('forcefullcollection') / 1MB), 2)
+        Write-Log -Message "[$InvocationName] Function finished. Memory usage: $MemoryUsage MB (After collection: $NewMemoryUsage MB)" -Type Debug
+        if ($RetryObjects.Count -gt 0) {
+            $RetryObjects # Return the failure results
+            if ($DoNotLogErrors.IsPresent -eq $false) {
+                throw "Failed to process $($RetryObjects.Count) objects"
+            }
+        }
+    }
+}
+#endregion Invoke-AzureRequest
 
 
 #region EntraId
