@@ -3200,7 +3200,7 @@ https://nsftwr.com/posts/azure-batch-api/
                             Write-Log -Message ('[{0}] Successfully sent the request' -f $InvocationName) -Type Debug
                         }
                         catch {
-                            if ($response.Content -match '"(error|code)":') {
+                            if ($responses.Content -match '"(error|code)":') {
                                 # Converting the json error part of the answer
                                 $httpErrorJson = $responses.Content | ConvertFrom-Json
                                 if ($httpErrorJson.Error) { $httpErrorJson = $httpErrorJson.Error }
