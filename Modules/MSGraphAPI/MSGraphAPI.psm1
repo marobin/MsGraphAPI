@@ -1410,7 +1410,7 @@ TargetWorkloadId : Microsoft.DirectoryServices
                             Write-Log -Message "[$InvocationName] Request body is too big to be shown ($($body.count))" -Type Debug
                         }
                         $body = $null
-                        [System.GC]::GetTotalMemory($true)
+                        $null = [System.GC]::GetTotalMemory($true)
                     }
                     #send request to Graph API
                     try {
@@ -2460,16 +2460,16 @@ The following warning will be logged:
         [string]$OrderBy,
 
         [Parameter(Position = 11, HelpMessage = 'Page size (max 999 objects per page)', ParameterSetName = 'Detailed')]
+        [Parameter(Position = 3, HelpMessage = 'Page size (max 999 objects per page)', ParameterSetName = 'Path')]
         [Parameter(Position = 3, HelpMessage = 'Page size (max 999 objects per page)', ParameterSetName = 'Uri')]
-        [Parameter(Position = 2, HelpMessage = 'Page size (max 999 objects per page)', ParameterSetName = 'Path')]
         [ValidateRange(1, 999)]
         [Alias('MaxPageSize')]
         [uint16]$PageSize = 999,
 
         [Parameter(Position = 12, HelpMessage = 'Delay between requests if throttled in milliseconds', ParameterSetName = 'Detailed')]
+        [Parameter(Position = 4, HelpMessage = 'Delay between requests if throttled in milliseconds', ParameterSetName = 'Path')]
         [Parameter(Position = 4, HelpMessage = 'Delay between requests if throttled in milliseconds', ParameterSetName = 'Uri')]
-        [Parameter(Position = 3, HelpMessage = 'Delay between requests if throttled in milliseconds', ParameterSetName = 'Path')]
-        [ValidateRange(100, 5000)]
+        [ValidateRange(100, 60000)]
         [Alias('WaitTime')]
         [uint16]$ThrottlingDelay = 1000,
 
@@ -2608,14 +2608,14 @@ The following warning will be logged:
                         else {
                             $params.Payload = $Body
                         }
-                        if ($body.count -lt 50) {
+                        if ($params.Payload.Length -lt 1000) {
                             Write-Log -Message "[$InvocationName] Request body: $($Body | ConvertTo-Json -Depth $JsonDepth)" -Type Debug
                         }
                         else {
                             Write-Log -Message "[$InvocationName] Request body is too big to be shown ($($body.count))" -Type Debug
                         }
                         $body = $null
-                        [System.GC]::GetTotalMemory($true)
+                        $null = [System.GC]::GetTotalMemory($true)
                     }
                     #send request to Azure REST API
                     try {
