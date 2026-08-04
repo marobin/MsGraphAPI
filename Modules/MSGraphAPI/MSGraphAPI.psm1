@@ -8491,6 +8491,265 @@ Expand-ByteArray -ByteArray ([byte[]]((Get-Clipboard).Split('] ')[-1].Split(',')
 }
 
 
+function Get-IntuneReport {
+    <#
+.SYNOPSIS
+    Use the reports/exportJobs endpoint to generate Intune reports.
+
+.DESCRIPTION
+    Use the reports/exportJobs endpoint to generate Intune reports.
+
+    The requests can be sent sequentially by using the following parameters: ReportName (Required), Select, Format, Filter, LocalizationType
+    They can also be sent in a batch request by using the InputObject parameter.
+
+    Process:
+        1. Send a POST request to deviceManagement/reports/exportJobs with the parameters (Returns a jobId)
+        2. Send a GET request to deviceManagement/reports/exportJobs('<JobId>') to query the job's state, until it's "completed". Response includes a short-lived download url
+        3. Use the download url to download the report (.zip file)
+        4. Expand the archive and remove it
+
+    See more information about this process:
+        - Case study => https://techcommunity.microsoft.com/blog/intunecustomersuccess/from-hours-to-minutes-rethinking-microsoft-intune-compliance-reporting-with-the-/4540554
+        - Overview => https://learn.microsoft.com/en-us/intune/device-management/reports/export-graph-apis
+        - List of available reports => https://learn.microsoft.com/en-us/intune/device-management/reports/ref-graph-available-reports
+
+.PARAMETER InputObject
+    List of request that will be sent in a batch.
+    All items must have at least a "reportName" property, which matches one of the names listed in the documentation.
+    Optional properties:
+        - select
+        - filter
+        - format
+        - LocalizationType
+
+.PARAMETER ReportName
+    Name of the report as defined in the documentation.
+
+.PARAMETER Select
+    List of the properties linked to the report.
+
+.PARAMETER Format
+    Format of the report: csv (default), or json.
+
+.PARAMETER Filter
+    Request filter.
+
+.PARAMETER LocalizationType
+    Type of report localization:
+        - (Default) LocalizedValuesAsAdditionalColumn (https://learn.microsoft.com/en-us/intune/device-management/reports/export-graph-apis#localizedvaluesasadditionalcolumn-report-value)
+        - ReplaceLocalizableValues (https://learn.microsoft.com/en-us/intune/device-management/reports/export-graph-apis#replacelocalizablevalues-report-value)
+
+.PARAMETER APIVersion
+    API version to use for the request.
+
+.PARAMETER Destination
+    Path of the destination folder.
+
+.EXAMPLE
+    PS C:\> Get-IntuneReport -ReportName 'Devices' -Select @("DeviceName","managementAgent","ownerType","complianceState","OS","OSVersion","LastContact","UPN","DeviceId") -Filter "(OwnerType eq '1')" -LocalizationType ReplaceLocalizableValues -Destination c:\temp -Verbose
+
+.EXAMPLE
+    PS C:\> $InputObject = @(
+        [PSCustomObject]@{
+            reportName = 'AutopilotV2DeploymentStatus'
+            select = @('SerialNumber','DeploymentStatus','DeviceId','DeviceName')
+            format = 'json'
+        },
+        [PSCustomObject]@{
+            reportName = 'ActiveMalware'
+        }
+    )
+
+    PS C:\> Get-IntuneReport -APIVersion beta -InputObject $InputObject
+
+.NOTES
+    AUTHOR: Marc-Antoine ROBIN (Metsys)
+    CREATION: 2026-08-04
+    VERSION: 1.0.0
+    MODIFICATIONS:
+
+.LINK
+
+
+
+#>
+
+    [CmdletBinding(DefaultParameterSetName = 'Single')]
+    param (
+        [Parameter(Mandatory = $true, Position = 0, ParameterSetName = 'Batch')]
+        [Object[]]$InputObject,
+
+        [Parameter(Mandatory = $true, Position = 0, ValueFromPipeline = $true, ValueFromPipelineByPropertyName = $true, ParameterSetName = 'Single')]
+        [Alias('Name')]
+        [String]$ReportName,
+
+        [Parameter(Position = 1, ParameterSetName = 'Single')]
+        [Alias('Property')]
+        [String[]]$Select,
+
+        [Parameter(Position = 2, ValueFromPipelineByPropertyName = $true, ParameterSetName = 'Single')]
+        [ValidateSet('json','csv')]
+        [String]$Format = 'csv',
+
+        [Parameter(Position = 3, ValueFromPipelineByPropertyName = $true, ParameterSetName = 'Single')]
+        [String]$Filter,
+
+        [Parameter(Position = 4, ValueFromPipelineByPropertyName = $true, ParameterSetName = 'Single')]
+        [ValidateSet('LocalizedValuesAsAdditionalColumn','ReplaceLocalizableValues')]
+        [String]$LocalizationType = 'LocalizedValuesAsAdditionalColumn',
+
+        [Parameter(Position = 5, ParameterSetName = 'Single')]
+        [Parameter(Position = 5, ParameterSetName = 'Batch')]
+        [ValidateNotNullOrEmpty()]
+        [ValidateSet('v1.0', 'beta')]
+        [String]$APIVersion = 'beta',
+
+        [Parameter(Mandatory = $true, Position = 6, ParameterSetName = 'Single')]
+        [Parameter(Mandatory = $true, Position = 6, ParameterSetName = 'Batch')]
+        [String]$Destination
+    )
+
+    begin {
+        $InvocationName = $MyInvocation.MyCommand.Name
+        if (! (Test-Path -Path $Destination)) {
+            $null = New-Item -Path $Destination -ItemType Directory
+        }
+        $SuccessList = New-Object -TypeName System.Collections.Generic.List[PSCustomObject]
+    }
+    process {
+        if ($PSCmdlet.ParameterSetName -eq 'Batch') {
+            $Hashtable = $(
+                foreach ($Item in $InputObject) {
+                    if ($null -eq $Item) { continue }
+                    if ("$($Item.reportName)" -eq '') {
+                        Write-Warning -Message "[$InvocationName] Failed to parse item: $($Item | ConvertTo-Json -Compress)"
+                        continue
+                    }
+                    $Body = @{
+                        reportName       = $Item.reportName
+                        filter           = $Item.Filter
+                        select           = $Item.Select
+                        localizationType = $Item.LocalizationType
+                        format           = $Item.Format
+                    }
+                    foreach ($Key in $Body.Clone().keys) {
+                        if ("$($Body[$Key])".Trim() -eq '') {
+                            $Body.Remove($Key)
+                        }
+                    }
+                    @{
+                        id      = "$($Item.reportName)"
+                        method  = 'POST'
+                        url     = 'deviceManagement/reports/exportJobs'
+                        body    = $body
+                        headers = @{'Content-Type' = 'application/json' }
+                    }
+                }
+            )
+            if ($Hashtable.Count -eq 0) { return }
+            $Result = Invoke-MgGraphRequestBatch -APIVersion $APIVersion -DoNotLogErrors -Hashtable $Hashtable | Select-Object @{Label = 'id'; Expression = { if ($null -ne $_.body.id) { $_.body.id } else { $_.id } } },'status','body'
+            foreach ($Item in $Result) {
+                if ($Item.status -in (200,201)) {
+                    $SuccessList.Add($Item.body)
+                }
+                else {
+                    Write-Warning -Message "[$InvocationName] Failed to query [$($Item.id)] with status code $($Item.status)"
+                }
+            }
+            if ($SuccessList.Count -gt 0) {
+                do {
+                    Start-Sleep -Seconds 20
+                    $BatchResult = Invoke-MgGraphRequestBatch -APIVersion $APIVersion -Resource 'deviceManagement/reports/exportJobs' -ObjectList $SuccessList
+                    foreach ($Report in ($BatchResult | Where-Object { $_.body.status -eq 'completed' })) {
+                        [String]$Url = "$($Report.body.url)".Trim()
+                        if ("$Url" -ne '') {
+                            [String]$FileName = $Url -replace '.+/([\w-]+\.zip).*','$1'
+                            [String]$FilePath = "$Destination\$FileName"
+                            [String]$ReportPath = "$Destination\$($FileName.Replace('.zip',".$($Report.body.format)"))"
+                            Write-Verbose -Message "[$InvocationName] Downloading [$FileName] from [$Url] to [$FilePath]"
+                            try {
+                                Invoke-RestMethod -Uri $Url -OutFile $FilePath -ErrorAction Stop
+                                if (Test-Path -Path $FilePath) {
+                                    Write-Verbose -Message "[$InvocationName] Expanding archive [$FilePath]..."
+                                    Expand-Archive -Path $FilePath -DestinationPath "$Destination" -Force -ErrorAction Stop
+                                    Write-Verbose -Message "[$InvocationName] Report path [$ReportPath]"
+                                    $ReportPath
+                                    $null = $SuccessList.Remove(($SuccessList | Where-Object -Property id -EQ $Report.id))
+                                    Remove-Item -Path $FilePath -Force -EA Ignore
+                                }
+                                else {
+                                    Write-Warning -Message "[$InvocationName] Failed to find [$FilePath]"
+                                }
+                            }
+                            catch {
+                                Write-Warning -Message "[$InvocationName] Failed to download [$FileName] from [$Url]: $($_.Exception.Message)"
+                            }
+                        }
+                        else {
+                            Write-Warning -Message "[$InvocationName] Failed to retieve download url for [$($Report.Id)]"
+                        }
+                    }
+                    Write-Verbose -Message "[$InvocationName] Still waiting on $($SuccessList.Count) reports: $(($BatchResult | Where-Object { $_.body.status -ne 'completed' } | ForEach-Object {"$($_.id) ($($_.body.status))"}) -join ', '))"
+                } while ($SuccessList.Count -gt 0)
+            }
+        }
+        else {
+            # POST https://graph.microsoft.com/beta/deviceManagement/reports/exportJobs
+            $Body = @{
+                reportName       = $ReportName
+                filter           = $Filter
+                select           = $Select
+                localizationType = $LocalizationType
+                format           = $Format
+            }
+            foreach ($Key in $Body.Clone().keys) {
+                if ("$($Body[$Key])".Trim() -eq '') {
+                    $Body.Remove($Key)
+                }
+            }
+            Write-Verbose -Message "[$InvocationName] Generating report using: $($Body | ConvertTo-Json -Compress)"
+            # Wait at least 1 minute when throttling occurs (https://learn.microsoft.com/en-us/intune/device-management/reports/export-graph-apis#api-throttling-conditions)
+            $Result = Invoke-MgGraphRequestSingle -Resource 'deviceManagement/reports/exportJobs' -Method POST -APIVersion $APIVersion -Body $body -ThrottlingDelay 60000
+
+            if ($Result.status -notin ('InProgress','notStarted')) {
+                throw "[$InvocationName] could not refresh the report: $($Result.status)"
+            }
+            Write-Verbose -Message "[$InvocationName] Waiting for completion (id: $($Result.Id))"
+            do {
+                Start-Sleep -Seconds 20
+                $Result = Invoke-MgGraphRequestSingle -Resource "deviceManagement/reports/exportJobs('$($Result.id)')" -APIVersion $APIVersion -ThrottlingDelay 60000
+            } while (($null -ne $Result) -and ($Result.status -ne 'completed'))
+            if ($null -eq $Result) {
+                Write-Warning -Message "[$InvocationName] An error occured while fetching the report data"
+                return
+            }
+            Write-Verbose -Message "[$InvocationName] Status: $($Result.Status) (Requested on [$($Result.requestDateTime.ToString('s'))], expires on [$($Result.expirationDateTime.ToString('s'))])"
+
+            if ("$($Result.url)" -ne '') {
+                [String]$FileName = $Result.Url -replace '.+/([\w-]+\.zip).*','$1'
+                [String]$FilePath = "$Destination\$FileName"
+                [String]$ReportPath = "$Destination\$($FileName.Replace('.zip',".$($Report.body.format)"))"
+                Write-Verbose -Message "[$InvocationName] Downloading [$FileName] from [$($Result.Url)] to [$FilePath]"
+                Invoke-RestMethod -Uri $Result.url -OutFile $FilePath -ErrorAction Stop
+                if (Test-Path -Path $FilePath) {
+                    Write-Verbose -Message "[$InvocationName] Expanding archive [$FilePath]..."
+                    Expand-Archive -Path $FilePath -DestinationPath "$Destination" -Force -ErrorAction Stop
+                    Write-Verbose -Message "[$InvocationName] Report path [$ReportPath]"
+                    $ReportPath
+                    Remove-Item -Path $FilePath -Force -EA Ignore
+                }
+                else {
+                    throw "[$InvocationName] Failed to find [$FilePath]"
+                }
+            }
+            else {
+                Write-Warning -Message "[$InvocationName] Failed to retieve download url for [$($Result.Id)]"
+            }
+        }
+    }
+}
+
+
 function Get-IntunePolicySummaryReport {
     [CmdletBinding()]
     param ()
