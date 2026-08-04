@@ -1198,7 +1198,7 @@ TargetWorkloadId : Microsoft.DirectoryServices
         [Parameter(Position = 14, HelpMessage = 'Delay between requests if throttled in milliseconds', ParameterSetName = 'Query')]
         [Parameter(Position = 2, HelpMessage = 'Delay between requests if throttled in milliseconds', ParameterSetName = 'Skiptoken')]
         [Parameter(Position = 2, HelpMessage = 'Delay between requests if throttled in milliseconds', ParameterSetName = 'Deltatoken')]
-        [ValidateRange(100, 5000)]
+        [ValidateRange(100, 60000)]
         [Alias('WaitTime')]
         [uint16]$ThrottlingDelay = 1000,
 
@@ -1723,6 +1723,10 @@ function Invoke-MgGraphRequestBatch {
     Delay between batches in milliseconds.
     Default is 100.
 
+.PARAMETER ThrottlingDelay
+    Delay between request if throttled in seconds.
+    Default is 2.
+
 .PARAMETER MaxRetry
     Maximum retry attempts for failed requests.
     Default is 3.
@@ -1855,22 +1859,27 @@ Execute 4 queries at the same time:
         [String[]]$Advanced,
 
         [Parameter(Position = 9, HelpMessage = 'Batch size (max 20 objects per batch)', ParameterSetName = 'SingleResource')]
-        [Parameter(Position = 9, HelpMessage = 'Batch size (max 20 objects per batch)', ParameterSetName = 'Hashtable')]
+        [Parameter(Position = 2, HelpMessage = 'Batch size (max 20 objects per batch)', ParameterSetName = 'Hashtable')]
         [ValidateRange(1, 20)]
         [int]$BatchSize = 20,
 
         [Parameter(Position = 10, HelpMessage = 'Delay between batches in milliseconds', ParameterSetName = 'SingleResource')]
-        [Parameter(Position = 10, HelpMessage = 'Delay between batches in milliseconds', ParameterSetName = 'Hashtable')]
+        [Parameter(Position = 3, HelpMessage = 'Delay between batches in milliseconds', ParameterSetName = 'Hashtable')]
         [ValidateRange(1, 5000)]
         [int]$WaitTime = 1,
 
-        [Parameter(Position = 11, HelpMessage = 'Maximum retry attempts for failed requests', ParameterSetName = 'SingleResource')]
-        [Parameter(Position = 11, HelpMessage = 'Maximum retry attempts for failed requests', ParameterSetName = 'Hashtable')]
+        [Parameter(Position = 11, HelpMessage = 'Delay between requests if throttled in seconds', ParameterSetName = 'SingleResource')]
+        [Parameter(Position = 4, HelpMessage = 'Delay between requests if throttled in seconds', ParameterSetName = 'Hashtable')]
+        [ValidateRange(1, 60)]
+        [uint16]$ThrottlingDelay = 2,
+
+        [Parameter(Position = 12, HelpMessage = 'Maximum retry attempts for failed requests', ParameterSetName = 'SingleResource')]
+        [Parameter(Position = 5, HelpMessage = 'Maximum retry attempts for failed requests', ParameterSetName = 'Hashtable')]
         [ValidateRange(1, 10)]
         [int]$MaxRetry = 3,
 
-        [Parameter(Position = 12, ParameterSetName = 'SingleResource')]
-        [Parameter(Position = 2, ParameterSetName = 'Hashtable')]
+        [Parameter(Position = 13, ParameterSetName = 'SingleResource')]
+        [Parameter(Position = 6, ParameterSetName = 'Hashtable')]
         [ValidateSet('PSObject', 'HashTable', 'Json', 'HttpResponseMessage')]
         [String]$OutputType = 'PSObject',
 
@@ -2175,8 +2184,8 @@ Execute 4 queries at the same time:
                             $throttledResponses = $RetryObjects | Where-Object -Property status -EQ 429
                             if (($ThrottlingDetected -eq $true) -and ($throttledResponses | Measure-Object).Count -gt 0) {
                                 [uint32]$recommendedWait = ($throttledResponses.headers.'retry-after' | Measure-Object -Maximum).Maximum
-                                if ($recommendedWait -eq 0) { $recommendedWait = 2 }
-                                $backoffWait = [math]::Min($recommendedWait + ($Retrycount * 2), 30) # Max 30 second wait
+                                if ($recommendedWait -eq 0) { $recommendedWait = $ThrottlingDelay }
+                                $backoffWait = [math]::Min($recommendedWait + ($Retrycount * 2), 60) # Max 60 second wait
                                 Write-Log -Message "[$InvocationName] Throttling detected, waiting $backoffWait seconds (Recommended [$recommendedWait] | Retry [$Retrycount])" -Type Warning
                                 Start-Sleep -Seconds $backoffWait
                             }
@@ -2447,6 +2456,8 @@ The following warning will be logged:
         [string[]]$Name,
 
         [Parameter(Position = 7, HelpMessage = 'Request body for POST/PATCH operations', ParameterSetName = 'Detailed')]
+        [Parameter(Position = 2, HelpMessage = 'Request body for POST/PATCH operations', ParameterSetName = 'Path')]
+        [Parameter(Position = 2, HelpMessage = 'Request body for POST/PATCH operations', ParameterSetName = 'Uri')]
         [Alias('Payload', 'Content')]
         $Body,
 
@@ -2475,13 +2486,13 @@ The following warning will be logged:
 
         [Parameter(Position = 13, HelpMessage = 'Maximum retry attempts for failed requests when throttled', ParameterSetName = 'Detailed')]
         [Parameter(Position = 5, HelpMessage = 'Maximum retry attempts for failed requests when throttled', ParameterSetName = 'Uri')]
-        [Parameter(Position = 4, HelpMessage = 'Maximum retry attempts for failed requests when throttled', ParameterSetName = 'Path')]
+        [Parameter(Position = 5, HelpMessage = 'Maximum retry attempts for failed requests when throttled', ParameterSetName = 'Path')]
         [ValidateRange(1, 10)]
         [uint16]$MaxRetry = 3,
 
         [Parameter(Position = 14, ParameterSetName = 'Detailed')]
         [Parameter(Position = 6, ParameterSetName = 'Uri')]
-        [Parameter(Position = 5, ParameterSetName = 'Path')]
+        [Parameter(Position = 6, ParameterSetName = 'Path')]
         [ValidateSet('PSObject', 'HashTable', 'Json', 'HttpResponseMessage')]
         [ValidateSet('PSObject', 'HashTable', 'Json', 'HttpResponseMessage')]
         [String]$OutputType = 'PSObject'
@@ -3021,17 +3032,22 @@ https://nsftwr.com/posts/azure-batch-api/
         [string]$IdProperty,
 
         [Parameter(Position = 9, HelpMessage = 'Batch size (max 20 objects per batch)', ParameterSetName = 'SingleResource')]
-        [Parameter(Position = 9, HelpMessage = 'Batch size (max 20 objects per batch)', ParameterSetName = 'Hashtable')]
+        [Parameter(Position = 2, HelpMessage = 'Batch size (max 20 objects per batch)', ParameterSetName = 'Hashtable')]
         [ValidateRange(1, 20)]
         [int]$BatchSize = 20,
 
         [Parameter(Position = 10, HelpMessage = 'Delay between batches in milliseconds', ParameterSetName = 'SingleResource')]
-        [Parameter(Position = 10, HelpMessage = 'Delay between batches in milliseconds', ParameterSetName = 'Hashtable')]
+        [Parameter(Position = 3, HelpMessage = 'Delay between batches in milliseconds', ParameterSetName = 'Hashtable')]
         [ValidateRange(1, 5000)]
         [int]$WaitTime = 1,
 
-        [Parameter(Position = 11, HelpMessage = 'Maximum retry attempts for failed requests', ParameterSetName = 'SingleResource')]
-        [Parameter(Position = 11, HelpMessage = 'Maximum retry attempts for failed requests', ParameterSetName = 'Hashtable')]
+        [Parameter(Position = 11, HelpMessage = 'Delay between requests if throttled in seconds', ParameterSetName = 'SingleResource')]
+        [Parameter(Position = 4, HelpMessage = 'Delay between requests if throttled in seconds', ParameterSetName = 'Hashtable')]
+        [ValidateRange(1, 60)]
+        [uint16]$ThrottlingDelay = 2,
+
+        [Parameter(Position = 12, HelpMessage = 'Maximum retry attempts for failed requests', ParameterSetName = 'SingleResource')]
+        [Parameter(Position = 5, HelpMessage = 'Maximum retry attempts for failed requests', ParameterSetName = 'Hashtable')]
         [ValidateRange(1, 10)]
         [int]$MaxRetry = 3,
 
@@ -3334,8 +3350,8 @@ https://nsftwr.com/posts/azure-batch-api/
                             $throttledResponses = $RetryObjects | Where-Object -Property status -EQ 429
                             if (($ThrottlingDetected -eq $true) -and ($throttledResponses | Measure-Object).Count -gt 0) {
                                 [uint32]$recommendedWait = ($throttledResponses.headers | Where-Object -Property Key -EQ 'Retry-After' | Select-Object -ExpandProperty Value | Measure-Object -Maximum).Maximum
-                                if ($recommendedWait -eq 0) { $recommendedWait = 2 }
-                                $backoffWait = [math]::Min($recommendedWait + ($Retrycount * 2), 30) # Max 30 second wait
+                                if ($recommendedWait -eq 0) { $recommendedWait = $ThrottlingDelay }
+                                $backoffWait = [math]::Min($recommendedWait + ($Retrycount * 2), 60) # Max 60 second wait
                                 Write-Log -Message "[$InvocationName] Throttling detected, waiting $backoffWait seconds (Recommended [$recommendedWait] | Retry [$Retrycount])" -Type Warning
                                 Start-Sleep -Seconds $backoffWait
                             }
