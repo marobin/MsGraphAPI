@@ -4170,6 +4170,8 @@ function Add-EntraIdGroupMember {
 .DESCRIPTION
     Add members to an existing Entra Id security group.
 
+    Existing extra members not specified in the Members list can also be removed by using the -Mirror switch.
+
 .PARAMETER DisplayName
     Name of the group.
 
@@ -4182,11 +4184,16 @@ function Add-EntraIdGroupMember {
 .PARAMETER MemberType
     Type of the new members (Device, User, or Group).
 
-.EXAMPLE
-    PS C:\> Add-EntraIdGroupMember
+.PARAMETER Mirror
+    Add the missing members and remove the existing ones that are not part of the specified members.
 
 .EXAMPLE
-    PS C:\> Add-EntraIdGroupMember
+Add 2 devices ($ObjectId1, $ObjectId2) to the group with id '12345678-9abc-def0-1234-56789abcdef0'
+    PS C:\> Add-EntraIdGroupMember -id '12345678-9abc-def0-1234-56789abcdef0' -Members $ObjectId1,$ObjectId2 -MemberType Device
+
+.EXAMPLE
+Add 2 users ($ObjectId1, $ObjectId2) to the group with id '12345678-9abc-def0-1234-56789abcdef0' and remove all other members than the specified 2 users
+    PS C:\> Add-EntraIdGroupMember -id '12345678-9abc-def0-1234-56789abcdef0' -Members $ObjectId1,$ObjectId2 -MemberType User -Mirror
 
 .NOTES
     AUTHOR: Marc-Antoine ROBIN
@@ -4217,7 +4224,11 @@ function Add-EntraIdGroupMember {
         [Parameter(Mandatory = $true, Position = 3, ParameterSetName = 'ByName')]
         [Parameter(Mandatory = $true, Position = 3, ParameterSetName = 'ById')]
         [ValidateSet('user', 'device', 'group')]
-        [String]$MemberType
+        [String]$MemberType,
+
+        [Parameter(Position = 4, ParameterSetName = 'ByName')]
+        [Parameter(Position = 4, ParameterSetName = 'ById')]
+        [switch]$Mirror
     )
 
     begin {
@@ -4250,12 +4261,17 @@ function Add-EntraIdGroupMember {
         $OriginalMemberCount = ($Members | Measure-Object).Count
         [String[]]$Skipped = $Members | Select-Object -Unique | Where-Object { $_ -in $ExistingMembership }
         [String[]]$AddMembers = $Members | Select-Object -Unique | Where-Object { $_ -notin $ExistingMembership }
+        [String[]]$ToRemove = @()
+        if ($Mirror.IsPresent -eq $true) {
+            [String[]]$ToRemove = $ExistingMembership | Where-Object { $Members -notcontains $_ }
+        }
         $NotPresentMemberCount = ($AddMembers | Measure-Object).Count
         if ((($ExistingMembership | Measure-Object).Count -eq 0) -and ($NotPresentMemberCount -eq 0)) {
             Write-Log -Message ('[{0}] No member was added to the already empty group [{1}]' -f $InvocationName, $ExistingGroup.id) -Type Warning
             [PSCustomObject]@{
                 Result  = 'Skipped'
                 Members = @()
+                Comment = ''
             }
         }
         elseif ($NotPresentMemberCount -eq 0) {
@@ -4263,6 +4279,7 @@ function Add-EntraIdGroupMember {
             [PSCustomObject]@{
                 Result  = 'Skipped'
                 Members = $ExistingMembership
+                Comment = ''
             }
         }
         else {
@@ -4285,33 +4302,73 @@ function Add-EntraIdGroupMember {
             )
 
             $BatchResults = Invoke-MgGraphRequestBatch -Hashtable $Hashtable -DoNotLogErrors
+            [String[]]$Failed = $BatchResults | Where-Object -Property Status -NotIn (200, 204) | Select-Object -ExpandProperty Id
             foreach ($Failure in ($BatchResults | Where-Object -Property Status -NotIn (200, 204))) {
                 $GraphError = $Failure | Convert-GraphErrorMessage
                 Write-Log -Message "[$InvocationName] Failed to add [$($Failure.id)] to the group with error $($Failure.Status) [$($GraphError.ErrorCode)]: $($GraphError.Message)"
                 [PSCustomObject]@{
                     Result  = 'Failure'
                     Members = $Failure.id
+                    Comment = "Error $($Failure.Status) [$($GraphError.ErrorCode)]: $($GraphError.Message)"
                 }
             }
             [String[]]$Success = $BatchResults | Where-Object -Property Status -In (200, 204) | Select-Object -ExpandProperty Id
-            if ($null -ne $Success) {
+            if ($Success.Count -gt 0) {
                 [PSCustomObject]@{
                     Result  = 'Success'
                     Members = $Success
+                    Comment = ''
                 }
             }
             if ($Skipped.Count -gt 0) {
                 [PSCustomObject]@{
                     Result  = 'Skipped'
                     Members = $Skipped
+                    Comment = ''
                 }
             }
             Write-Log -Message "[$InvocationName] Result: $(($Success | Measure-Object).Count) success, $(($Failed | Measure-Object).Count) failure, $($OriginalMemberCount - $NotPresentMemberCount) skipped"
         }
+        if (($Mirror.IsPresent -eq $true) -and ($ToRemove.Count -gt 0)) {
+            Write-Log -Message "[$InvocationName] Removing [$($ToRemove.Count)] extra members from the group"
+
+            $Hashtable = $(
+                # Remove extra members
+                foreach ($Memberid in $ToRemove) {
+                    if ("$Memberid".Trim() -eq '') { continue }
+                    @{
+                        id     = "$Memberid"
+                        method = 'DELETE'
+                        url    = '/groups/{0}/members/{1}/$ref' -f $ExistingGroup.id, $Memberid
+                    }
+                }
+            )
+
+            $BatchResults = Invoke-MgGraphRequestBatch -Hashtable $Hashtable -DoNotLogErrors
+            [String[]]$Failed = $BatchResults | Where-Object -Property Status -NotIn (200, 204) | Select-Object -ExpandProperty Id
+            foreach ($Failure in ($BatchResults | Where-Object -Property Status -NotIn (200, 204))) {
+                $GraphError = $Failure | Convert-GraphErrorMessage
+                Write-Log -Message "[$InvocationName] Failed to remove [$($Failure.id)] from the group with error $($Failure.Status) [$($GraphError.ErrorCode)]: $($GraphError.Message)"
+                [PSCustomObject]@{
+                    Result  = 'Failure'
+                    Members = $Failure.id
+                    Comment = "Error $($Failure.Status) [$($GraphError.ErrorCode)]: $($GraphError.Message)"
+                }
+            }
+            [String[]]$Removed = $BatchResults | Where-Object -Property Status -In (200, 204) | Select-Object -ExpandProperty Id
+            if ($null -ne $Removed) {
+                [PSCustomObject]@{
+                    Result  = 'Removed'
+                    Members = $Removed
+                    Comment = ''
+                }
+            }
+            Write-Log -Message "[$InvocationName] Result: $(($Removed | Measure-Object).Count) success, $(($Failed | Measure-Object).Count) failure"
+        }
     }
     end {
         # End function/script and report memory usage, before and after cleaning it up
-        $Hashtable = $GraphError = $Success = $ExistingMembership = $Skipped = $AddMembers = $Failure = $BatchResults = $null
+        $Hashtable = $GraphError = $Success = $Removed = $ExistingMembership = $Skipped = $AddMembers = $Failure = $BatchResults = $null
         $MemoryUsage = [Math]::Round(([System.GC]::GetTotalMemory($false) / 1MB), 2)
         $NewMemoryUsage = [Math]::Round(([System.GC]::GetTotalMemory('forcefullcollection') / 1MB), 2)
         Write-Log -Message "[$InvocationName] Function finished. Memory usage: $MemoryUsage MB (After collection: $NewMemoryUsage MB)" -Type Debug
