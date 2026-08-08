@@ -8567,6 +8567,8 @@ function Get-IntuneReport {
     CREATION: 2026-08-04
     VERSION: 1.0.0
     MODIFICATIONS:
+    TODO: 
+        - Add support for cached reports => deviceManagement/reports/cachedReportConfigurations('<ReportName>_00000000-0000-0000-0000-000000000001')
 
 .LINK
 
@@ -8589,6 +8591,7 @@ function Get-IntuneReport {
 
         [Parameter(Position = 2, ValueFromPipelineByPropertyName = $true, ParameterSetName = 'Single')]
         [ValidateSet('json','csv')]
+        [ValidateNotNullOrEmpty()]
         [String]$Format = 'csv',
 
         [Parameter(Position = 3, ValueFromPipelineByPropertyName = $true, ParameterSetName = 'Single')]
@@ -8728,7 +8731,7 @@ function Get-IntuneReport {
             if ("$($Result.url)" -ne '') {
                 [String]$FileName = $Result.Url -replace '.+/([\w-]+\.zip).*','$1'
                 [String]$FilePath = "$Destination\$FileName"
-                [String]$ReportPath = "$Destination\$($FileName.Replace('.zip',".$($Report.body.format)"))"
+                [String]$ReportPath = "$Destination\$($FileName.Replace('.zip',".$($Report.format)"))"
                 Write-Verbose -Message "[$InvocationName] Downloading [$FileName] from [$($Result.Url)] to [$FilePath]"
                 Invoke-RestMethod -Uri $Result.url -OutFile $FilePath -ErrorAction Stop
                 if (Test-Path -Path $FilePath) {
