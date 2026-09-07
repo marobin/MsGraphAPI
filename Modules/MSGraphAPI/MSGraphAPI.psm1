@@ -2632,7 +2632,7 @@ The following warning will be logged:
                     try {
                         $response = Invoke-AzRestMethod @params #-MaxPageSize $PageSize
                         $params.Clear()
-                        if (("$($response.StatusCode)" -notlike '20?') -or ($response.Content -match '"(error|code)":')) {
+                        if (("$($response.StatusCode)" -notmatch '20\d') -or ($response.Content -match '"error":\s"')) {
                             throw $response.StatusCode
                         }
                         Write-Log -Message "[$InvocationName] Request successful" -Type Debug
@@ -2731,7 +2731,7 @@ The following warning will be logged:
                 $response = $null
             }
             catch {
-                if ($response.Content -match '"(error|code)":') {
+                if ($response.Content -match '"error":\s"') {
                     # Converting the json error part of the answer
                     $httpErrorJson = $response.Content | ConvertFrom-Json
                     if ($httpErrorJson.Error) { $httpErrorJson = $httpErrorJson.Error }
@@ -3212,7 +3212,7 @@ https://nsftwr.com/posts/azure-batch-api/
                                 Verbose = $false
                             }
                             $responses = Invoke-AzRestMethod @Params
-                            if ($responses.StatusCode -notlike '20?') {
+                            if ($responses.StatusCode -notmatch '20\d') {
                                 throw "Status code is $($responses.StatusCode)"
                             }
                             Write-Log -Message ('[{0}] Successfully sent the request' -f $InvocationName) -Type Debug
@@ -8567,7 +8567,7 @@ function Get-IntuneReport {
     CREATION: 2026-08-04
     VERSION: 1.0.0
     MODIFICATIONS:
-    TODO: 
+    TODO:
         - Add support for cached reports => deviceManagement/reports/cachedReportConfigurations('<ReportName>_00000000-0000-0000-0000-000000000001')
 
 .LINK
