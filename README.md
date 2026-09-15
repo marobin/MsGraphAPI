@@ -2,6 +2,9 @@
 
 This module contains Microsoft Graph API, Azure REST API, Log Analytics, and SharePoint helper functions.
 
+Most of the functions below use a comment-based help.
+Once the module is imported, **Get-Help -Name `<FunctionName>` -ShowWindow** can be used against these functions.
+
 ## Authentication
 | Name                          | Description                                                            |
 | ----------------------------- | ---------------------------------------------------------------------- |
