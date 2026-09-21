@@ -222,6 +222,66 @@ if ($null -eq (Get-Command -Name 'Write-Log' -EA Ignore)) {
 
 
 #region authentication
+function Get-TenantInfo {
+ <#
+.SYNOPSIS
+    Get information about a tenant from its id or name.
+
+.DESCRIPTION
+    Get information about a tenant from its id or name.
+
+.PARAMETER TenantName
+    Name of the tenant (domain).
+
+.PARAMETER TenantId
+    Id of the tenant.
+
+.EXAMPLE
+    PS C:\> Get-TenantInfo -TenantName 'mytenant.com'
+
+.EXAMPLE
+    PS C:\> Get-TenantInfo -TenantId '12345678-1234-1234-1234-0123456789ab'
+
+.NOTES
+    AUTHOR: Marc-Antoine ROBIN
+    CREATION: 2026-09-21
+    VERSION: 1.0.0
+    MODIFICATIONS:
+
+.LINK
+
+
+#>
+
+
+    [CmdletBinding(DefaultParameterSetName = 'TenantName')]
+    param (
+        [Parameter(Mandatory = $true, Position = 0, ValueFromPipeline = $true, ValueFromPipelineByPropertyName = $true, ParameterSetName = 'TenantName')]
+        [Alias('Tenant', 'Name')]
+        [String]$TenantName,
+
+        [Parameter(Mandatory = $true, Position = 0, ValueFromPipeline = $true, ValueFromPipelineByPropertyName = $true, ParameterSetName = 'TenantId')]
+        [String]$TenantId
+    )
+
+    begin {
+        $Uri = 'https://login.microsoftonline.com/{0}/v2.0/.well-known/openid-configuration'
+    }
+    process {
+        switch ($PSCmdlet.ParameterSetName) {
+            'TenantName' {
+                $Content = Invoke-RestMethod -Uri ($Uri -f $TenantName) -UseBasicParsing
+                $TenantId = $Content.token_endpoint -replace '.+/([a-fA-F0-9]{8}-([0-9a-f]{4}-){3}[0-9a-f]{12})/.+','$1'
+            }
+            'TenantId' {
+                $Content = Invoke-RestMethod -Uri ($Uri -f $TenantId) -UseBasicParsing
+            }
+        }
+        $Content | Add-Member -MemberType NoteProperty tenantId -Value "$TenantId" -Force -PassThru
+    }
+}
+
+
 function ConvertFrom-JWTToken {
     <#
 .SYNOPSIS
