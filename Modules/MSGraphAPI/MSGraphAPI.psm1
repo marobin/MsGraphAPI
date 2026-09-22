@@ -223,7 +223,7 @@ if ($null -eq (Get-Command -Name 'Write-Log' -EA Ignore)) {
 
 #region authentication
 function Get-TenantInfo {
- <#
+    <#
 .SYNOPSIS
     Get information about a tenant from its id or name.
 
