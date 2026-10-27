@@ -1469,8 +1469,6 @@ TargetWorkloadId : Microsoft.DirectoryServices
                         else {
                             Write-Log -Message "[$InvocationName] Request body is too big to be shown ($($body.count))" -Type Debug
                         }
-                        $body = $null
-                        $null = [System.GC]::GetTotalMemory($true)
                     }
                     #send request to Graph API
                     try {
@@ -1485,6 +1483,8 @@ TargetWorkloadId : Microsoft.DirectoryServices
                     }
                     if ($Method -in ('POST','PUT','PATCH') -and ($null -eq $response.value)) {
                         Write-Log -Message "[$InvocationName] $Method answer delivered" -Type Debug
+                        $body = $null
+                        $null = [System.GC]::GetTotalMemory($true)
                         return $response
                     }
                     if ($null -ne $response.value) {
@@ -1498,11 +1498,15 @@ TargetWorkloadId : Microsoft.DirectoryServices
                     elseif ($params.ContainsKey('OutputFilePath')) {
                         if (Test-Path -LiteralPath $Params.OutputFilePath) {
                             Write-Log -Message "[$InvocationName] Requested content saved in [$($Params.OutputFilePath)]" -Type Debug
+                            $body = $null
+                            $null = [System.GC]::GetTotalMemory($true)
                             return "$($Params.OutputFilePath)"
                             #Get-Content -LiteralPath $Params.OutputFilePath
                         }
                         else {
                             Write-Log -Message "[$InvocationName] Could not find [$($Params.OutputFilePath)]" -Type Warning
+                            $body = $null
+                            $null = [System.GC]::GetTotalMemory($true)
                             return
                         }
                     }
@@ -2701,8 +2705,6 @@ The following warning will be logged:
                         else {
                             Write-Log -Message "[$InvocationName] Request body is too big to be shown ($($body.count))" -Type Debug
                         }
-                        $body = $null
-                        $null = [System.GC]::GetTotalMemory($true)
                     }
                     #send request to Azure REST API
                     try {
@@ -2720,6 +2722,8 @@ The following warning will be logged:
                     # return the formated result
                     if ($Method -in ('POST','PUT','PATCH') -and ($null -eq $response.Content)) {
                         Write-Log -Message "[$InvocationName] $Method answer delivered" -Type Debug
+                        $body = $null
+                        $null = [System.GC]::GetTotalMemory($true)
                         return $response
                     }
                     if ($null -ne $response.Content) {
