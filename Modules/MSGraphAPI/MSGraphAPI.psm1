@@ -9906,6 +9906,7 @@ function Get-IntuneHealthScript {
 
 
     [CmdletBinding(DefaultParameterSetName = 'ByName')]
+    [Alias('Get-IntuneRemediationScript')]
     param (
         [Parameter(Position = 0, ValueFromPipelineByPropertyName = $true, ParameterSetName = 'ByName')]
         [String]$displayName,
@@ -10132,6 +10133,7 @@ Download every script in the IntuneScripts located in the current user's profile
 
 
     [CmdletBinding(DefaultParameterSetName = 'ById')]
+    [Alias('Invoke-IntuneRemediationScriptDownload')]
     param (
         [Parameter(Mandatory = $true, Position = 0, ValueFromPipelineByPropertyName = $true, ParameterSetName = 'ByName')]
         [Alias('Name')]
