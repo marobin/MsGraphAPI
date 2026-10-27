@@ -1508,7 +1508,8 @@ TargetWorkloadId : Microsoft.DirectoryServices
                     }
                     Write-Log -Message "[$InvocationName] Retrieved page $i, Now total: $ResultObjectCount items" -Type Debug
 
-                    if ($null -ne $response.'@odata.count') {
+                    if (($null -ne $response.'@odata.count')) {
+                        Write-Verbose -Message "[$InvocationName] @odata.count is $($response.'@odata.count')"
                         # Create a global variable to hold the results count
                         New-Variable -Name '_GraphAPICount' -Value $response.'@odata.count' -Force -Scope Global -EA Ignore
                     }
@@ -2272,6 +2273,7 @@ Execute 4 queries at the same time:
                                 $TotalObjects = ($Hashtable | Measure-Object).Count
                                 $ClonedHashTable = $Hashtable.Clone()
                                 [Hashtable[]]$Hashtable = $RetryObjects | ForEach-Object { $ClonedHashTable | Where-Object -Property id -EQ $_.Id }
+                                $ClonedHashTable.Clear()
                             }
                             'SingleResource' {
                                 $ObjectList = $RetryObjects | ForEach-Object { $ObjectList | Where-Object -Property id -EQ $_.id }
@@ -3438,6 +3440,7 @@ https://nsftwr.com/posts/azure-batch-api/
                                 $TotalObjects = ($Hashtable | Measure-Object).Count
                                 $ClonedHashTable = $Hashtable.Clone()
                                 [Hashtable[]]$Hashtable = $RetryObjects | ForEach-Object { $ClonedHashTable | Where-Object -Property name -EQ $_.name }
+                                $ClonedHashTable.Clear()
                             }
                             'SingleResource' {
                                 $ObjectList = $RetryObjects | ForEach-Object { $ObjectList | Where-Object -Property name -EQ $_.name }
@@ -5760,7 +5763,7 @@ function Get-IntuneAssignment {
                         switch ($Resource) {
                             'deviceManagement/roleDefinitions' { 'roleAssignments'; break }
                             'deviceManagement/deviceShellScripts' { 'groupAssignments'; break }
-                            Default { 'assignments'; break }
+                            default { 'assignments'; break }
                         }
                     )
                     Write-Verbose -Message "[$InvocationName] Querying assignments for $($PolicyList.Count) policies of type [$($CategoryName): $($SubCategory)]"
@@ -6169,7 +6172,7 @@ function Get-IntunePolicyPlatformAndType {
                                 '\b(macOS|mac)\b' { 'macOS' }
                                 '\b(ios|iPad|iPhone|apple)' { 'iOS/iPadOS' }
                                 '\b(linux|unix)' { 'Linux' }
-                                Default {
+                                default {
                                     if ($id -match 'DefaultLimit') { 'All' }
                                     else {
                                         "Unknown ($odataType | $Resource)" -replace ' \( \|',' (' -replace '\| \)',')'
@@ -6239,7 +6242,7 @@ function Get-IntunePolicyPlatformAndType {
                     'AppConfiguration' { 'Managed devices'; break }
                     'deviceAndAppManagementRoleDefinition' { 'Role definition' ; break }
                     'windowsWiredNetworkConfiguration' { 'Wired network' ; break }
-                    Default { $odataType; break }
+                    default { $odataType; break }
                 }
             }
             else {
@@ -6409,7 +6412,7 @@ function Resolve-IntuneConfigurationPolicy {
                     $Value = [PSCustomObject]@{value = $SettingInstanceItem.value; displayName = '' }
                     break
                 }
-                Default {
+                default {
                     Write-Warning -Message "[$PolicyId] Unknown type: $_"
                 }
             }
@@ -6645,7 +6648,7 @@ function Resolve-SettingUriToUrl {
                     }
                     break
                 }
-                Default {
+                default {
                     $PolicyName = ''
                     $url = ''
                     break
@@ -8204,7 +8207,7 @@ Expand-ByteArray -ByteArray ([byte[]]((Get-Clipboard).Split('] ')[-1].Split(',')
                 '^(Settings Catalog|Administrative template|Security Baseline)' { 'Configuration profiles'; break }
                 'Windows Firewall Rules' { 'Firewall';break }
                 #Default { 'Configuration profiles';break }
-                Default { 'Templates';break }
+                default { 'Templates';break }
             }
         }
     } |
@@ -10036,7 +10039,7 @@ function Get-IntuneHealthScript {
                                 '' {
                                     'N/A'
                                 }
-                                Default {
+                                default {
                                     'Unknown [{0}]' -f $_
                                 }
                             }
