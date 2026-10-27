@@ -1512,10 +1512,13 @@ TargetWorkloadId : Microsoft.DirectoryServices
                     }
                     Write-Log -Message "[$InvocationName] Retrieved page $i, Now total: $ResultObjectCount items" -Type Debug
 
-                    if (($null -ne $response.'@odata.count')) {
+                    if (($null -ne $response.'@odata.count') -and ($response.'@odata.count' -gt $ResultObjectCount)) {
                         Write-Verbose -Message "[$InvocationName] @odata.count is $($response.'@odata.count')"
                         # Create a global variable to hold the results count
                         New-Variable -Name '_GraphAPICount' -Value $response.'@odata.count' -Force -Scope Global -EA Ignore
+                    }
+                    elseif ((([uint32]$response.'@odata.count') -lt $ResultObjectCount)) {
+                        New-Variable -Name '_GraphAPICount' -Value $ResultObjectCount -Force -Scope Global -EA Ignore
                     }
 
                     # Check for next page
@@ -1536,13 +1539,13 @@ TargetWorkloadId : Microsoft.DirectoryServices
                     }
                     elseif ($response.PSObject.Properties.Name -contains '@odata.deltaLink') {
                         [String]$Global:_GraphAPIDeltaLink = $response.'@odata.deltaLink'
-                        $uri = ''
+                        $Global:_GraphAPINextLink = $uri = ''
                         $response = $null
                         return
                     }
                     else {
                         Write-Log -Message "[$InvocationName] No more pages found" -Type Debug
-                        $uri = ''
+                        $Global:_GraphAPINextLink = $uri = ''
                         $response = $null
                         return
                     }
