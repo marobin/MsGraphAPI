@@ -8110,7 +8110,7 @@ Expand-ByteArray -ByteArray ([byte[]]((Get-Clipboard).Split('] ')[-1].Split(',')
         [uint32]$AsExcludedCount = $ASExcludedList | Where-Object -Property MemberCount -GE 0 | Measure-Object -Property MemberCount -Sum | Select-Object -ExpandProperty Sum
         $SumRow++
         $SumColumn = 1
-        $SummaryHash["$($Policy.Name)"] = "'$SummaryWorksheetName'!B$SumRow" # Add the cell reference to be used as a link in the detail worksheets
+        $SummaryHash["$($Policy.id)-$($Policy.Name)"] = "'$SummaryWorksheetName'!B$SumRow" # Add the cell reference to be used as a link in the detail worksheets
         [String]$Status = $(
             if ((($Policy.Targeted -eq $false) -and ($AsInclude.Count -eq 0)) -or ($Policy.settingCount -eq 0)) {
                 # Policy is not targeted or does not have any setting so it should be removed
@@ -8295,7 +8295,7 @@ Expand-ByteArray -ByteArray ([byte[]]((Get-Clipboard).Split('] ')[-1].Split(',')
 
                 $DetailColumn = 1
                 foreach ($Policy in ($PolicyGroup.Group | Sort-Object -Property Name)) {
-                    $DetailHash["$($Policy.id)"] = "'$WorksheetName'!A$($DetailRow + 1)"
+                    $DetailHash["$($Policy.Id)-$($Policy.Name)"] = "'$WorksheetName'!A$($DetailRow + 1)"
                     Write-Log -Message "  [$($Policy.Name)]"
                     foreach ($Setting in $Policy.Settings) {
                         $DetailRow++
@@ -8330,7 +8330,7 @@ Expand-ByteArray -ByteArray ([byte[]]((Get-Clipboard).Split('] ')[-1].Split(',')
                             [String]$SettingPath = $Policy.Type
                         }
                         $ColumnList = New-Object -TypeName System.Collections.Generic.List[Object] -ArgumentList @(,(
-                                @{Content = "$($Policy.Name)"; HorizontalAlignment = 'Left'; FontSize = 10; WrapText = $false; HyperLink = $SummaryHash["$($Policy.Name)"] },
+                                @{Content = "$($Policy.Name)"; HorizontalAlignment = 'Left'; FontSize = 10; WrapText = $false; HyperLink = $SummaryHash["$($Policy.Id)-$($Policy.Name)"] },
                                 @{Content = "$SettingPath"; HorizontalAlignment = 'Left'; FontSize = 10; WrapText = $false },
                                 @{Content = "$($Setting.ParentSettingName)\$($Setting.Name)".Trim('\').Replace("$($Setting.Name)\",''); HorizontalAlignment = 'Left'; FontSize = 10; WrapText = $false; Comment = "$(if ($DescriptionInfo -eq 'Comment') {$Setting.description})" },
                                 $(if ($DescriptionInfo -match 'Column') { @{Content = $Setting.description; HorizontalAlignment = 'Left'; FontSize = 10; WrapText = $true } } else { @{} }), # Add the column if needed
@@ -8400,7 +8400,7 @@ Expand-ByteArray -ByteArray ([byte[]]((Get-Clipboard).Split('] ')[-1].Split(',')
                 $DetailColumn = 1
                 foreach ($Policy in ($PolicyGroup.Group | Sort-Object -Property Name)) {
                     Write-Log -Message "  [$($Policy.Name)]"
-                    $DetailHash["$($Policy.id)"] = "'$WorksheetName'!A$($DetailRow + 1)"
+                    $DetailHash["$($Policy.Id)-$($Policy.Name)"] = "'$WorksheetName'!A$($DetailRow + 1)"
                     foreach ($Setting in $Policy.Settings) {
                         $DetailRow++
                         $DetailColumn = 1
@@ -8415,7 +8415,7 @@ Expand-ByteArray -ByteArray ([byte[]]((Get-Clipboard).Split('] ')[-1].Split(',')
                             }
                         }
                         $ColumnList = New-Object -TypeName System.Collections.Generic.List[Object] -ArgumentList @(,(
-                                @{Content = "$($Policy.Name)"; HorizontalAlignment = 'Left'; FontSize = 10; WrapText = $false; HyperLink = $SummaryHash["$($Policy.Name)"] },
+                                @{Content = "$($Policy.Name)"; HorizontalAlignment = 'Left'; FontSize = 10; WrapText = $false; HyperLink = $SummaryHash["$($Policy.Id)-$($Policy.Name)"] },
                                 @{Content = "$($Setting.Name)"; HorizontalAlignment = 'Left'; FontSize = 10; WrapText = $false },
                                 $(if ($DescriptionInfo -match 'Column') { @{Content = $Setting.description; HorizontalAlignment = 'Left'; FontSize = 10; WrapText = $true } } else { @{} }), # Add the column if needed
                                 @{Content = $ScopeFormula; HorizontalAlignment = 'Center'; FontSize = 10; WrapText = $true },
@@ -8480,14 +8480,14 @@ Expand-ByteArray -ByteArray ([byte[]]((Get-Clipboard).Split('] ')[-1].Split(',')
                 $DetailColumn = 1
                 foreach ($Policy in ($PolicyGroup.Group | Sort-Object -Property Name)) {
                     Write-Log -Message "  [$($Policy.Name)]"
-                    $DetailHash["$($Policy.id)"] = "'$WorksheetName'!A$($DetailRow + 1)"
+                    $DetailHash["$($Policy.Id)-$($Policy.Name)"] = "'$WorksheetName'!A$($DetailRow + 1)"
                     foreach ($SettingGroup in ($Policy.Settings | Group-Object -Property ParentSettingName | Sort-Object -Property Name)) {
                         $DetailRow++
                         $DetailColumn = 1
                         $SettingHash = $SettingGroup.Group | Convert-PSObjectArrayToHashTable -idProperty Name -Property Value, ValueText -Verbose:$false
                         $NetworkTypes = ($SettingHash.'Network Types'.ValueText -split ':' | Where-Object { $_ -match 'FW_?PROFILE_?TYPE' }) -replace '.*FW_?PROFILE_?TYPE_?([^:]+).*','$1'
                         $ColumnList = New-Object -TypeName System.Collections.ArrayList -ArgumentList @(,(
-                                @{Content = $Policy.Name; HorizontalAlignment = 'Left'; FontSize = 10; WrapText = $false; HyperLink = $SummaryHash["$($Policy.Name)"] },
+                                @{Content = $Policy.Name; HorizontalAlignment = 'Left'; FontSize = 10; WrapText = $false; HyperLink = $SummaryHash["$($Policy.Id)-$($Policy.Name)"] },
                                 @{Content = $ScopeFormula; HorizontalAlignment = 'Center'; FontSize = 10; WrapText = $true },
                                 @{Content = $SettingGroup.Name; HorizontalAlignment = 'Left'; FontSize = 10; WrapText = $false },
                                 @{Content = $SettingHash.Action.ValueText; HorizontalAlignment = 'Center'; FontSize = 10; WrapText = $false },
@@ -8557,7 +8557,7 @@ Expand-ByteArray -ByteArray ([byte[]]((Get-Clipboard).Split('] ')[-1].Split(',')
     $Worksheet = $Excel.Workbook.Worksheets["$SummaryWorksheetName"]
     for ($Row = 2; $Row -le ($Worksheet.Dimension.Rows); $Row++) {
         [String]$Id = $Worksheet.Cells["A$Row"].Text
-        $hyperlinkObj = New-Object -TypeName 'OfficeOpenXml.ExcelHyperLink' -ArgumentList @($DetailHash["$Id"], "$Id")
+        $hyperlinkObj = New-Object -TypeName 'OfficeOpenXml.ExcelHyperLink' -ArgumentList @($DetailHash["$Id-$($Worksheet.Cells["B$Row"].Text)"], "$Id")
         $hyperlinkObj.ToolTip = "See the detailed settings for [$($Worksheet.Cells["B$Row"].Text)]"
         $Worksheet.Cells["A$Row"].Hyperlink = $hyperlinkObj
         #Changing cell style from Normal to Hyperlink
