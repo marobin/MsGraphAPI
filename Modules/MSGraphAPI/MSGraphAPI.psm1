@@ -1828,6 +1828,32 @@ Get the primary users of every Windows device.
     PS C:\> $AllPrimaryUsers.Body.value | Out-GridView
 
 .EXAMPLE
+Get the Entra ID devices linked with Intune devices.
+
+    PS C:\> $GRParams = @{
+        Resource = 'deviceManagement/managedDevices'
+        Select   = 'id','deviceName','operatingSystem','AzureAdDeviceId'
+        OrderBy  = 'deviceName'
+        Filter   = "operatingsystem eq 'Windows'"
+        Top      = 100
+    }
+    PS C:\> $IntuneDeviceList = Invoke-MgGraphRequestSingle @GRParams
+
+    PS C:\> $GRParams = @{
+        Resource       = 'devices/deviceid'
+        ObjectList     = ($IntuneDeviceList | Where-Object -Property azureADDeviceId -ne "$([guid]::Empty)")
+        Select         = 'id','displayName','operatingSystem','trustType'
+        DoNotLogErrors = $true
+        Verbose        = $true
+    }
+    PS C:\> $EntraDeviceList = Invoke-MgGraphRequestBatch @GRParams | Convert-PSObjectArrayToHashTable -idProperty id
+    PS C:\> # Loop through the Intune devices and fetch the linked Entra ID device using the hashtable created above
+    PS C:\> foreach ($Device in $IntuneDeviceList) {
+        $EntraDevice = $EntraDeviceList["$($Device.azureAdDeviceId)"].body
+        #...
+    }
+
+.EXAMPLE
 Execute 4 queries at the same time:
 
     PS C:\> $HashTable = @(
@@ -1992,6 +2018,39 @@ Execute 4 queries at the same time:
             Write-Log -Message ('[{0}] Failed to initialize with error' -f $InvocationName) -Type Error
             throw
         }
+        if ($PSCmdlet.ParameterSetName -eq 'SingleResource') {
+            # Find the id property that should be used, or if objectList represents the list of ids (string[])
+            [String[]]$ObjectProperties = $ObjectList | Get-Member -MemberType Properties | Select-Object -ExpandProperty Name
+            [String]$IdProperty = 'id'
+            if (($Resource.TrimEnd('_') -eq 'devices/deviceid') -and ($ObjectProperties -contains 'azureADDeviceId')) {
+                # Use azureADDeviceId when querying Entra ID devices based on their deviceId
+                $IdProperty = 'azureADDeviceId'
+            }
+            elseif ($ObjectProperties.Count -eq 1) {
+                if ($ObjectProperties -notin ('Length','id')) { $IdProperty = "$($ObjectProperties[0])" }
+                elseif ($ObjectProperties -eq 'Length') { $IdProperty = '' } # The ObjectList is a string array
+            }
+            $ObjectProperties = $null
+            # Build URL with properties and filters
+            $urlPattern = "/$($Resource)/{0}/$query" -replace '/+', '/'
+            # Special condition to handle querying Entra ID devices based on their deviceId instead of id (Example: "devices/deviceid_{0}")
+            if ($Resource.TrimEnd('_') -eq 'devices/deviceid') {
+                $urlPattern = "/$($Resource.TrimEnd('_'))_{0}/$query" -replace '/+', '/'
+            }
+            # Add properties if specified
+            [String[]]$urlParams = $(
+                if ($Select.Count -gt 0) { "`$select=$($Select -join ',')" }
+                if ($Expand.Count -gt 0) { "`$expand=$($Expand -join ',')" }
+                if ($null -ne $PSBoundParameters['Filter']) { "`$filter=$([System.Web.HttpUtility]::UrlEncode("$($Filter -replace "'+","'")"))" }
+                if (($Advanced -contains 'count') -and ($urlPattern -notlike '*$count=true*')) { '$count=true' }
+            )
+            # Combine URL parameters
+            if ($urlParams.Count -gt 0) {
+                $urlPattern = "$("$urlPattern".TrimEnd('/'))?$($urlParams -join '&')"
+            }
+            $urlParams = $null
+            Write-Verbose -Message "[$InvocationName] Using [$IdProperty] as the id property in [$Method] query [$urlPattern] (body: $($body | ConvertTo-Json -Compress))"
+        }
     }
 
     process {
@@ -2057,47 +2116,14 @@ Execute 4 queries at the same time:
                                         break
                                     }
                                     'SingleResource' {
-                                        # Used in the retry loop to know whether the ObjectList is a [String[]] or [Object[]] with an id property
-                                        $ObjectIsStringArray = ($ObjectList | Get-Member | Select-Object -ExpandProperty TypeName -First 1) -eq 'System.String'
                                         $batchObjects = $ObjectList[$batchStart..$batchEnd]
                                         foreach ($Item in $batchObjects) {
-                                            [String]$ItemId = $Item.Id
-                                            if (("$ItemId" -eq '') -and ($null -ne $Item)) {
-                                                $ItemId = $Item
-                                            }
-
-                                            # Build URL with properties and filters
-                                            $url = "/$($Resource)/$ItemId/$query" -replace '/+', '/'
-
-                                            # Add properties if specified
-                                            [String[]]$urlParams = $(
-                                                if ($Select.Count -gt 0) {
-                                                    "`$select=$($Select -join ',')"
-                                                }
-
-                                                if ($Expand.Count -gt 0) {
-                                                    "`$expand=$($Expand -join ',')"
-                                                }
-
-                                                # Add filters if specified
-                                                if ($null -ne $PSBoundParameters['Filter']) {
-                                                    "`$filter=$([System.Web.HttpUtility]::UrlEncode("$($Filter -replace "'+","'")"))"
-                                                }
-
-                                                if (($Advanced -contains 'count') -and ($url -notlike '*$count=true*')) {
-                                                    '$count=true'
-                                                }
-                                            )
-
-                                            # Combine URL parameters
-                                            if ($urlParams.Count -gt 0) {
-                                                $url = '{0}?{1}' -f $url, ($urlParams -join '&')
-                                            }
-
+                                            if ($IdProperty -ne '') { [String]$ItemId = $Item.$IdProperty }
+                                            else { $ItemId = $Item }
                                             $req = @{
                                                 id      = $ItemId
                                                 method  = "$Method".ToUpper() # The method needs to be in capital letters
-                                                url     = $url
+                                                url     = $urlPattern -f $ItemId
                                                 body    = $null
                                                 headers = @{}
                                             }
@@ -2291,11 +2317,11 @@ Execute 4 queries at the same time:
                             'SingleResource' {
                                 $ObjectList = $RetryObjects | ForEach-Object {
                                     [String]$Id = $_.id
-                                    if ($ObjectIsStringArray -eq $true) {
+                                    if ("$IdProperty" -eq '') {
                                         $ObjectList | Where-Object { "$_" -eq $Id }
                                     }
                                     else {
-                                        $ObjectList | Where-Object -Property id -EQ $Id
+                                        $ObjectList | Where-Object -Property $IdProperty -EQ $Id
                                     }
                                 }
                             }
