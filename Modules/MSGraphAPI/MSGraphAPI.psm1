@@ -1418,7 +1418,7 @@ TargetWorkloadId : Microsoft.DirectoryServices
                 $uri = "$uri`?$($queryParams -join '&')"
             }
         }
-        Write-Verbose -Message "[$InvocationName] Query: $uri"
+        Write-Verbose -Message ("[$InvocationName] [$Method] Query: $uri".Replace(' []',''))
 
         if ($Advanced -contains 'ConsistencyLevel') {
             Write-Verbose -Message "[$InvocationName] Adding ConsistencyLevel=eventual in the headers"
@@ -2107,7 +2107,7 @@ Execute 4 queries at the same time:
                                     }
                                 }
                             )
-                            Write-Log -Message "[$InvocationName] Created batch for items $($i) to $([Math]::Min($i + $BatchSize, $TotalObjects)) of $TotalObjects total items" -Type Debug
+                            Write-Log -Message "[$InvocationName] Created batch for items $i to $($batchEnd + 1) of $TotalObjects total items" -Type Debug
                         }
                         catch {
                             Write-Log -Message ('[{0}] Failed to create batch with error' -f $InvocationName) -Type Error
