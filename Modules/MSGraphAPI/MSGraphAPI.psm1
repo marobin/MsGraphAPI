@@ -10511,6 +10511,300 @@ function Invoke-IntuneWin32AppDownload {
 
 
 #region miscellaneous
+function Find-CloudDeviceInfo {
+    <#
+.SYNOPSIS
+    Find all device identities of a devices from the specified id or serial number.
+
+.DESCRIPTION
+    Find all device identities (Entra Id, Intune, Autopilot) of a devices from the specified id or serial number.
+
+    Depending on the type of id specified with -SearchString and -SearchType, the function looks for the linked device identities:
+        - EntraObjectId = Looks for an Entra Id device using the objectId passed in -SearchString.
+            It then looks for an Intune device using the Entra Id device's deviceId property.
+            Finally, Autopilot identities are retrieved using either Intune's id, Intune's serial number, Entra's device id, or the ZTDId retrived from Entra's physicalIds property
+
+        - EntraDeviceId = Looks for an Entra Id device using the deviceId passed in -SearchString.
+            It then looks for an Intune device using the Entra Id device's deviceId property.
+            Finally, Autopilot identities are retrieved using either Intune's id, Intune's serial number, Entra's device id, or the ZTDId retrived from Entra's physicalIds property
+
+        - IntuneId = Looks for an Intune device using the id passed in -SearchString.
+            It then looks for an Entra Id device using the Intune device's azureADDeviceId property.
+            Finally, Autopilot identities are retrieved using either Intune's id, Intune's serial number, Entra's device id, or the ZTDId retrived from Entra's physicalIds property
+
+        - AutopilotId = Looks for an Autopilot device using the id passed in -SearchString.
+            It then looks for an Intune device using the Autopilot device's managedDeviceId property or its serialNumber.
+            Finally, Entra Id device(s) are retrieved using either Autopilot's or Intune's azureADDeviceId property.
+
+        - SerialNumber = Looks for an Intune device using the serial number passed in -SearchString.
+            It then looks for an Autopilot device using the serial number passed in -SearchString.
+            Finally, Entra Id device(s) are retrieved using either Autopilot's or Intune's azureADDeviceId property
+
+    By default, the function does not return the blank properties of objects.
+    Using the -ShowEmptyValue switch prevents this behavior.
+
+.PARAMETER SearchString
+    Id or serial number of a device.
+    The value of the id must match the type specified in -SearchType.
+
+.PARAMETER SearchType
+    Type of object to look for using the specified string in -SearchString.
+
+.PARAMETER ShowEmptyValue
+    By default, the function does not return the blank properties of objects.
+    Using this switch prevents this behavior.
+
+.EXAMPLE
+    PS C:\> Find-CloudDeviceInfo -SearchString '01234567-89ab-cdef-0123-456789abcdef' -SearchType 'EntraObjectId'
+    PS C:\> Find-CloudDeviceInfo -SearchString '01234567-89ab-cdef-0123-456789abcdef' -SearchType 'EntraDeviceId'
+    PS C:\> Find-CloudDeviceInfo -SearchString '01234567-89ab-cdef-0123-456789abcdef' -SearchType 'IntuneId'
+    PS C:\> Find-CloudDeviceInfo -SearchString '01234567-89ab-cdef-0123-456789abcdef' -SearchType 'AutopilotId'
+    PS C:\> Find-CloudDeviceInfo -SearchString 'SERIAL_NUMBER' -SearchType 'SerialNumber'
+
+.NOTES
+    AUTHOR: Marc-Antoine ROBIN (Metsys)
+    CREATION:
+    VERSION: 1.0.0
+    MODIFICATIONS:
+
+.LINK
+
+
+#>
+
+
+
+    [CmdletBinding()]
+    param (
+        [Parameter(Mandatory = $true, Position = 0, ValueFromPipeline = $true, ValueFromPipelineByPropertyName = $true)]
+        [Alias('id','deviceId','azureAdDeviceId','serialNumber')]
+        [String]$SearchString,
+
+        [Parameter(Mandatory = $true, Position = 2)]
+        [ValidateSet('EntraObjectId','EntraDeviceId','IntuneId','AutopilotId','SerialNumber')]
+        [String]$SearchType,
+
+        [Switch]$ShowEmptyValue
+    )
+
+    begin {
+        $InvocationName = $MyInvocation.MyCommand.Name
+        $SkipSerialList = @('','0','TobefilledbyO.E.M.','Defaultstring','SystemSerialNumber','SMBIOS_STRING_INDEX_0','System Serial Number','To be filled by O.E.M.')
+        $InvalidId = @('','00000000-0000-0000-0000-000000000000')
+        $Params = @{
+            APIVersion  = 'beta'
+            ErrorAction = 'Stop'
+        }
+        $IntuneEndpoint = 'devicemanagement/managedDevices'
+        $EntraEndpoint = 'devices'
+        $AutopilotEndpoint = 'deviceManagement/windowsAutopilotDeviceIdentities'
+    }
+    process {
+        switch ($SearchType) {
+            'EntraObjectId' {
+                Write-Verbose -Message "[$InvocationName] Looking for an Entra Id device using objectId [$SearchString]"
+                try {
+                    $EntraDevice = Invoke-MgGraphRequestSingle -Resource ('{0}/{1}' -f $EntraEndpoint, $SearchString) @Params
+                    if ($null -eq $EntraDevice) { throw }
+                }
+                catch {
+                    $host.UI.WriteErrorLine("[$InvocationName] Failed to find an Entra Id device")
+                    break
+                }
+                Write-Verbose -Message "[$InvocationName] Looking for an Intune device using deviceId [$($EntraDevice.deviceId)]"
+                $IntuneDevice = Invoke-MgGraphRequestSingle -Resource $IntuneEndpoint -Filter "azureAdDeviceId eq '$($EntraDevice.deviceId)'" @Params
+                if ($null -eq $IntuneDevice) { Write-Warning -Message "[$InvocationName] Could not find an Intune device" }
+                break
+            }
+            'EntraDeviceId' {
+                Write-Verbose -Message "[$InvocationName] Looking for an Entra Id device using deviceId [$SearchString]"
+                try {
+                    $EntraDevice = Invoke-MgGraphRequestSingle -Resource ('{0}/deviceid_{1}' -f $EntraEndpoint, $SearchString) @Params
+                    if ($null -eq $EntraDevice) { throw }
+                }
+                catch {
+                    Write-Warning -Message "[$InvocationName] Could not find an Entra Id device"
+                }
+                Write-Verbose -Message "[$InvocationName] Looking for an Intune device using deviceId [$SearchString]"
+                try {
+                    $IntuneDevice = Invoke-MgGraphRequestSingle -Resource $IntuneEndpoint -Filter "azureAdDeviceId eq '$SearchString'" @Params
+                    if ($null -eq $IntuneDevice) { throw }
+                }
+                catch {
+                    Write-Warning -Message "[$InvocationName] Could not find an Intune device"
+                }
+                break
+            }
+            'IntuneId' {
+                Write-Verbose -Message "[$InvocationName] Looking for an Intune device using id [$SearchString]"
+                try {
+                    $IntuneDevice = Invoke-MgGraphRequestSingle -Resource ('{0}/{1}' -f $IntuneEndpoint, $SearchString) @Params
+                    if ($null -eq $IntuneDevice) { throw }
+                }
+                catch {
+                    $host.UI.WriteErrorLine("[$InvocationName] Failed to find an Intune device")
+                    break
+                }
+                if ($IntuneDevice.azureADDeviceId -notin $InvalidId) {
+                    Write-Verbose -Message "[$InvocationName] Looking for an Entra Id device using Intune's azureADDeviceId [$($IntuneDevice.azureADDeviceId)]"
+                    try {
+                        $EntraDevice = Invoke-MgGraphRequestSingle -Resource ('{0}/deviceid_{1}' -f $EntraEndpoint, $IntuneDevice.azureADDeviceId) @Params
+                        if ($null -eq $EntraDevice) { throw }
+                    }
+                    catch {
+                        Write-Warning -Message "[$InvocationName] Could not find an Entra Id device"
+                    }
+                }
+                else {
+                    Write-Warning -Message "[$InvocationName] Could not find an Entra Id device from Intune's azureADDeviceId [$($IntuneDevice.azureADDeviceId)]"
+                }
+                break
+            }
+            'AutopilotId' {
+                Write-Verbose -Message "[$InvocationName] Looking for an Autopilot device using id [$SearchString]"
+                try {
+                    $AutopilotDevice = Invoke-MgGraphRequestSingle -Resource ('{0}/{1}' -f $AutopilotEndpoint, $SearchString) @Params
+                    if ($null -eq $AutopilotDevice) { throw }
+                }
+                catch {
+                    $host.UI.WriteErrorLine("[$InvocationName] Failed to find an Autopilot device")
+                    break
+                }
+                if ("$($AutopilotDevice.SerialNumber)" -notin $SkipSerialList) {
+                    Write-Verbose -Message "[$InvocationName] Looking for an Intune device using serialNumber [$($AutopilotDevice.SerialNumber)]"
+                    $IntuneDevice = Invoke-MgGraphRequestSingle -Resource $IntuneEndpoint -Filter "serialNumber eq '$($AutopilotDevice.SerialNumber)'" @Params
+                }
+                elseif ("$($AutopilotDevice.managedDeviceId)".Trim() -notin $InvalidId) {
+                    Write-Verbose -Message "[$InvocationName] Looking for an Intune device using Autopilot's managedDeviceId [$($AutopilotDevice.managedDeviceId)]"
+                    $IntuneDevice = Invoke-MgGraphRequestSingle -Resource ('{0}/{1}' -f $IntuneEndpoint, $AutopilotDevice.managedDeviceId) @Params
+                }
+                break
+            }
+            'SerialNumber' {
+                Write-Verbose -Message "[$InvocationName] Looking for an Intune device using serialNumber [$SearchString]"
+                try {
+                    $IntuneDevice = Invoke-MgGraphRequestSingle -Resource $IntuneEndpoint -Filter "serialNumber eq '$SearchString'" @Params
+                }
+                catch {
+                    Write-Warning -Message "[$InvocationName] Could not find an Intune device"
+                }
+                Write-Verbose -Message "[$InvocationName] Looking for an Autopilot device using serialNumber [$SearchString]"
+                try {
+                    # "$filter=serialNumber eq '...'" does not work hence the use of contains (used in the portal)
+                    # We then only keep the object that has the exact specified serialNumber
+                    $AutopilotDevice = Invoke-MgGraphRequestSingle -Resource $AutopilotEndpoint -Filter "contains(serialNumber,'$SearchString')" @Params |
+                        Where-Object -Property SerialNumber -EQ $SearchString
+                    if ($null -eq $AutopilotDevice) { throw }
+                }
+                catch {
+                    Write-Warning -Message "[$InvocationName] Could not find an Autopilot device"
+                }
+                break
+            }
+        }
+
+        if ($SearchType -in ('EntraObjectId','EntraDeviceId','IntuneId')) {
+            $AutopilotId = ''
+            if ($EntraDevice.physicalIds -match '\[ZTDid\]:(.+)') {
+                [String]$AutopilotId = ($EntraDevice.physicalIds).where({ "$_" -match '\[ZTDid\]' }).Split(':')[-1]
+            }
+            [String[]]$DeviceId = @($EntraDevice.deviceId) + @($IntuneDevice.azureAdDeviceId) | Where-Object { "$_".Trim() -notin $InvalidId } | Sort-Object -Unique
+            if (($DeviceId.Count -eq 0) -and ("$($IntuneDevice.serialNumber)".Trim() -in $SkipSerialList) -and ("$($IntuneDevice.id)" -in $InvalidId) -and ("$AutopilotId" -eq '')) {
+                Write-Warning -Message "[$InvocationName] Cannot look for an Autopilot device since no valid deviceId and serialNumber have been found"
+            }
+            else {
+                $AutopilotDevice = Invoke-MgGraphRequestBatch @Params -DoNotLogErrors -Hashtable $(
+                    if ("$($IntuneDevice.serialNumber)".Trim() -notin $SkipSerialList) {
+                        Write-Verbose -Message "[$InvocationName] Looking for an Autopilot device using serialNumber [$($IntuneDevice.serialNumber)]"
+                        @{
+                            id     = "Serial_$($IntuneDevice.azureAdDeviceId)"
+                            method = 'GET'
+                            # "$filter=serialNumber eq '...'" does not work hence the use of contains (used in the portal)
+                            url    = "{0}?`$filter=contains(serialNumber,'{1}')" -f $AutopilotEndpoint, $($IntuneDevice.serialNumber)
+                        }
+                    }
+                    if ($DeviceId.Count -gt 0) {
+                        foreach ($DevId in $DeviceId) {
+                            Write-Verbose -Message "[$InvocationName] Looking for an Autopilot device using deviceId [$DevId]"
+                            @{
+                                id     = "DeviceId_$DevId"
+                                method = 'GET'
+                                url    = "{0}?`$filter=azureActiveDirectoryDeviceId eq '{1}'" -f $AutopilotEndpoint, $DevId
+                            }
+                        }
+                    }
+                    if ("$AutopilotId" -ne '') {
+                        Write-Verbose -Message "[$InvocationName] Looking for an Autopilot device using Entra's physicalIds[ZTDID] [$AutopilotId]"
+                        @{
+                            id     = "AutopilotId_$AutopilotId"
+                            method = 'GET'
+                            url    = '{0}/{1}' -f $AutopilotEndpoint, $AutopilotId
+                        }
+                    }
+                    if ("$($IntuneDevice.id)" -notin $InvalidId) {
+                        Write-Verbose -Message "[$InvocationName] Looking for an Autopilot device using Intune's id [$($IntuneDevice.id)]"
+                        @{
+                            id     = "IntuneId_$($IntuneDevice.id)"
+                            method = 'GET'
+                            url    = "{0}?`$filter=managedDeviceId eq '{1}'" -f $AutopilotEndpoint, $IntuneDevice.id
+                        }
+                    }
+                ) |
+                    Where-Object -Property Status -EQ 200 |
+                    Select-Object -ExpandProperty Body |
+                    ForEach-Object { if ($null -ne $_.Value) { $_.Value } else { $_ } } |
+                    Select-Object -Property * -ExcludeProperty '@odata.context' |
+                    Select-Object -Unique |
+                    Where-Object { ("$($IntuneDevice.serialNumber)".Trim() -in $SkipSerialList) -or ($_.SerialNumber -eq $IntuneDevice.serialNumber) }
+            }
+        }
+        elseif ($SearchType -in ('AutopilotId', 'SerialNumber')) {
+            [String[]]$DeviceId = @($AutopilotDevice.azureADDeviceId) + @($IntuneDevice.azureAdDeviceId) | Where-Object { "$_".Trim() -notin $InvalidId } | Sort-Object -Unique
+            if ($DeviceId.Count -gt 0) {
+                $EntraDevice = Invoke-MgGraphRequestBatch @Params -DoNotLogErrors -Hashtable $(
+                    foreach ($DevId in $DeviceId) {
+                        Write-Verbose -Message "[$InvocationName] Looking for an Entra Id device using deviceId [$DevId]"
+                        @{
+                            id     = "$DevId"
+                            method = 'GET'
+                            url    = '{0}/deviceid_{1}' -f $EntraEndpoint, $DevId
+                        }
+                    }
+                ) | Where-Object -Property Status -EQ 200 |
+                    Select-Object -ExpandProperty Body
+            }
+            else {
+                Write-Warning -Message "[$InvocationName] Could not look for an Entra Id device as no valid azureADDeviceId was found"
+            }
+        }
+
+        foreach ($Dev in $AutopilotDevice) {
+            if ("$($Dev.id)" -eq '') { continue }
+            $APProfile = (Invoke-MgGraphRequestSingle -Resource ('{0}/{1}' -f $AutopilotEndpoint, $Dev.id) -Expand DeploymentProfile @Params).DeploymentProfile
+            $Dev | Add-Member -MemberType NoteProperty -Name 'DeploymentProfile' -Value "$APProfile" -Force
+        }
+
+        foreach ($Type in ('Entra','Intune','Autopilot')) {
+            $Object = Get-Variable -Name "$($Type)Device" -ValueOnly -EA Ignore
+            if ($null -eq $Object) { continue }
+            [String[]]$PropertyList = (($Object | Select-Object -First 1).PSObject.Properties).where({ $_.MemberType -in ('Property','NoteProperty') }).Name
+            foreach ($Item in $Object) {
+                foreach ($Property in $PropertyList) {
+                    if ($Property -in ('id','@odata.context')) { continue }
+                    if (("$($Item.$Property)".Trim() -eq '') -and ($ShowEmptyValue.IsPresent -ne $true)) { continue }
+                    [PSCustomObject]@{
+                        Object   = $Type
+                        id       = $Item.id
+                        Property = $Property
+                        Value    = $Item.$Property
+                    }
+                }
+            }
+        }
+    }
+}
+
+
 function Convert-GraphErrorMessage {
     [CmdletBinding()]
     param (
