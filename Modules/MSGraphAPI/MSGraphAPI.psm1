@@ -2050,6 +2050,8 @@ Execute 4 queries at the same time:
                                         break
                                     }
                                     'SingleResource' {
+                                        # Used in the retry loop to know whether the ObjectList is a [String[]] or [Object[]] with an id property
+                                        $ObjectIsStringArray = ($ObjectList | Get-Member | Select-Object -ExpandProperty TypeName -First 1) -eq 'System.String'
                                         $batchObjects = $ObjectList[$batchStart..$batchEnd]
                                         foreach ($Item in $batchObjects) {
                                             [String]$ItemId = $Item.Id
@@ -2276,7 +2278,15 @@ Execute 4 queries at the same time:
                                 $ClonedHashTable.Clear()
                             }
                             'SingleResource' {
-                                $ObjectList = $RetryObjects | ForEach-Object { $ObjectList | Where-Object -Property id -EQ $_.id }
+                                $ObjectList = $RetryObjects | ForEach-Object {
+                                    [String]$Id = $_.id
+                                    if ($ObjectIsStringArray -eq $true) {
+                                        $ObjectList | Where-Object { "$_" -eq $Id }
+                                    }
+                                    else {
+                                        $ObjectList | Where-Object -Property id -EQ $Id
+                                    }
+                                }
                             }
                         }
                     }
@@ -3216,6 +3226,8 @@ https://nsftwr.com/posts/azure-batch-api/
                                         break
                                     }
                                     'SingleResource' {
+                                        # Used in the retry loop to know whether the ObjectList is a [String[]] or [Object[]] with an id property
+                                        $ObjectIsStringArray = ($ObjectList | Get-Member | Select-Object -ExpandProperty TypeName -First 1) -eq 'System.String'
                                         $batchObjects = $ObjectList[$batchStart..$batchEnd]
                                         foreach ($Item in $batchObjects) {
                                             [String]$ItemId = $Item.$IdProperty
@@ -3443,7 +3455,15 @@ https://nsftwr.com/posts/azure-batch-api/
                                 $ClonedHashTable.Clear()
                             }
                             'SingleResource' {
-                                $ObjectList = $RetryObjects | ForEach-Object { $ObjectList | Where-Object -Property name -EQ $_.name }
+                                $ObjectList = $RetryObjects | ForEach-Object {
+                                    [String]$Id = $_.name
+                                    if ($ObjectIsStringArray -eq $true) {
+                                        $ObjectList | Where-Object { "$_" -eq $Id }
+                                    }
+                                    else {
+                                        $ObjectList | Where-Object -Property $IdProperty -EQ $Id
+                                    }
+                                }
                             }
                         }
                     }
