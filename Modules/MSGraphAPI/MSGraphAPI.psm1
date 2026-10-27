@@ -2247,8 +2247,12 @@ Execute 4 queries at the same time:
                             $throttledResponses = $RetryObjects | Where-Object -Property status -EQ 429
                             if (($ThrottlingDetected -eq $true) -and ($throttledResponses | Measure-Object).Count -gt 0) {
                                 [uint32]$recommendedWait = ($throttledResponses.headers.'retry-after' | Measure-Object -Maximum).Maximum
-                                if ($recommendedWait -eq 0) { $recommendedWait = $ThrottlingDelay }
-                                $backoffWait = [math]::Min($recommendedWait + ($Retrycount * 2), 60) # Max 60 second wait
+                                if ($recommendedWait -eq 0) {
+                                    $backoffWait = [math]::Min(($ThrottlingDelay * ([math]::Pow(2, $RetryCount))), 60) # Exponential backoff, max 60 seconds
+                                }
+                                else {
+                                    $backoffWait = $recommendedWait + ($Retrycount * 2)
+                                }
                                 Write-Log -Message "[$InvocationName] Throttling detected, waiting $backoffWait seconds (Recommended [$recommendedWait] | Retry [$Retrycount])" -Type Warning
                                 Start-Sleep -Seconds $backoffWait
                             }
@@ -3424,8 +3428,12 @@ https://nsftwr.com/posts/azure-batch-api/
                             $throttledResponses = $RetryObjects | Where-Object -Property status -EQ 429
                             if (($ThrottlingDetected -eq $true) -and ($throttledResponses | Measure-Object).Count -gt 0) {
                                 [uint32]$recommendedWait = ($throttledResponses.headers | Where-Object -Property Key -EQ 'Retry-After' | Select-Object -ExpandProperty Value | Measure-Object -Maximum).Maximum
-                                if ($recommendedWait -eq 0) { $recommendedWait = $ThrottlingDelay }
-                                $backoffWait = [math]::Min($recommendedWait + ($Retrycount * 2), 60) # Max 60 second wait
+                                if ($recommendedWait -eq 0) {
+                                    $backoffWait = [math]::Min(($ThrottlingDelay * ([math]::Pow(2, $RetryCount))), 60) # Exponential backoff, max 60 seconds
+                                }
+                                else {
+                                    $backoffWait = $recommendedWait + ($Retrycount * 2)
+                                }
                                 Write-Log -Message "[$InvocationName] Throttling detected, waiting $backoffWait seconds (Recommended [$recommendedWait] | Retry [$Retrycount])" -Type Warning
                                 Start-Sleep -Seconds $backoffWait
                             }
